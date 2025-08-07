@@ -1,6 +1,3 @@
-TODO: this file should live at the root of the jsonschema-go module,
-above the jsonschema package.
-
 # JSON Schema for GO
 
 This module implements the [JSON Schema](https://json-schema.org/) specification.
