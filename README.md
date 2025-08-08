@@ -2,8 +2,8 @@
 
 This module implements the [JSON Schema](https://json-schema.org/) specification.
 The `jsonschema` package supports creating schemas, validating JSON values
-against a schema, and inferring a schema from a Go struct. See the package
-documentation for usage.
+against a schema, and inferring a schema from a Go struct. See the [package
+documentation](https://pkg.go.dev/github.com/google/jsonschema-go/jsonschema) for usage.
 
 ## Contributing
 
