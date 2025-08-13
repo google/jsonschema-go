@@ -114,8 +114,8 @@ type ResolveOptions struct {
 	Loader Loader
 	// ValidateDefaults determines whether to validate values of "default" keywords
 	// against their schemas.
-	// The [JSON Schema specification] does not require this, but it is
-	// recommended if defaults will be used.
+	// The [JSON Schema specification] does not require this, but it is recommended
+	// if defaults will be used.
 	//
 	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
 	ValidateDefaults bool

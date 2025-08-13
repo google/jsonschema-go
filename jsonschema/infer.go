@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// ForOptions are options for the [For] function.
+// ForOptions are options for the [For] and [ForType] functions.
 type ForOptions struct {
 	// If IgnoreInvalidTypes is true, fields that can't be represented as a JSON
 	// Schema are ignored instead of causing an error.
