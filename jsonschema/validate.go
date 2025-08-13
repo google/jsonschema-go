@@ -599,11 +599,10 @@ func (st *state) resolveDynamicRef(schema *Schema) (*Schema, error) {
 //
 // It is recommended to first call Resolve with a ValidateDefaults option of true,
 // then call this method, and lastly call Validate.
-//
-// TODO(jba): consider what defaults on top-level or array instances might mean.
-// TODO(jba): follow $ref and $dynamicRef
-// TODO(jba): apply defaults on sub-schemas to corresponding sub-instances.
 func (rs *Resolved) ApplyDefaults(instancep any) error {
+	// TODO(jba): consider what defaults on top-level or array instances might mean.
+	// TODO(jba): follow $ref and $dynamicRef
+	// TODO(jba): apply defaults on sub-schemas to corresponding sub-instances.
 	st := &state{rs: rs}
 	return st.applyDefaults(reflect.ValueOf(instancep), rs.root)
 }
