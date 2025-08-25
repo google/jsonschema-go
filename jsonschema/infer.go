@@ -231,7 +231,6 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		s.Types = []string{"null", s.Type}
 		s.Type = ""
 	}
-	schemas[t] = s
 	return s, nil
 }
 

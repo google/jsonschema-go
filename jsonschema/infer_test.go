@@ -338,3 +338,22 @@ func TestForWithCycle(t *testing.T) {
 func falseSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
+
+func TestDupSchema(t *testing.T) {
+	// Verify that we don't repeat schema contents, even if we clone the actual schemas.
+	type args struct {
+		S string   `jsonschema:"str"`
+		A []string `jsonschema:"arr"`
+	}
+
+	s := forType[args](false)
+	if g, w := s.Properties["S"].Description, "str"; g != w {
+		t.Errorf("S: got %q, want %q", g, w)
+	}
+	if g, w := s.Properties["A"].Description, "arr"; g != w {
+		t.Errorf("A: got %q, want %q", g, w)
+	}
+	if g, w := s.Properties["A"].Items.Description, ""; g != w {
+		t.Errorf("A.items: got %q, want %q", g, w)
+	}
+}
