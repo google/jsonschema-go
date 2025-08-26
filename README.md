@@ -1,4 +1,4 @@
-# JSON Schema for GO
+# JSON Schema for Go
 
 This module implements the [JSON Schema](https://json-schema.org/) specification.
 The `jsonschema` package supports creating schemas, validating JSON values
