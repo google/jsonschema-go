@@ -187,9 +187,11 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		s.Type = "object"
 		// no additional properties are allowed
 		s.AdditionalProperties = falseSchema()
+		for _, field := range reflect.VisibleFields(t) {
+			if field.Anonymous {
+				continue
+			}
 
-		for i := range t.NumField() {
-			field := t.Field(i)
 			info := fieldJSONInfo(field)
 			if info.omit {
 				continue

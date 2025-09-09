@@ -747,6 +747,9 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 	}
 	props := map[string]reflect.StructField{}
 	for _, sf := range reflect.VisibleFields(t) {
+		if sf.Anonymous {
+			continue
+		}
 		info := fieldJSONInfo(sf)
 		if !info.omit {
 			props[info.name] = sf
