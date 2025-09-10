@@ -175,18 +175,25 @@ func TestFor(t *testing.T) {
 func TestForType(t *testing.T) {
 	type schema = jsonschema.Schema
 
-	// ForType is virtually identical to For. Just test that options are handled properly.
-	opts := &jsonschema.ForOptions{
-		IgnoreInvalidTypes: true,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
-		},
+	type E struct {
+		G float64
 	}
 
 	type S struct {
 		I int
 		F func()
 		C custom
+		E
+		B bool
+	}
+
+	// ForType is virtually identical to For. Just test that options are handled properly.
+	opts := &jsonschema.ForOptions{
+		IgnoreInvalidTypes: true,
+		TypeSchemas: map[any]*jsonschema.Schema{
+			custom(0): {Type: "custom"},
+			E{}:       {Properties: map[string]*jsonschema.Schema{"G": {Type: "integer"}}},
+		},
 	}
 	got, err := jsonschema.ForType(reflect.TypeOf(S{}), opts)
 	if err != nil {
@@ -197,8 +204,10 @@ func TestForType(t *testing.T) {
 		Properties: map[string]*schema{
 			"I": {Type: "integer"},
 			"C": {Type: "custom"},
+			"G": {Type: "integer"},
+			"B": {Type: "boolean"},
 		},
-		Required:             []string{"I", "C"},
+		Required:             []string{"I", "C", "B"},
 		AdditionalProperties: falseSchema(),
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
