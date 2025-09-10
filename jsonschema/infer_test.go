@@ -122,22 +122,17 @@ func TestFor(t *testing.T) {
 							Required:             []string{"B"},
 							AdditionalProperties: falseSchema(),
 						},
-						"S": {
-							Type: "object",
-							Properties: map[string]*schema{
-								"B": {Type: "integer", Description: "bdesc"},
-							},
-							Required:             []string{"B"},
-							AdditionalProperties: falseSchema(),
+						"B": {
+							Type:        "integer",
+							Description: "bdesc",
 						},
 					},
-					Required:             []string{"A", "S"},
+					Required:             []string{"A", "B"},
 					AdditionalProperties: falseSchema(),
 				},
 			},
 		}
 	}
-
 	run := func(t *testing.T, tt test) {
 		if diff := cmp.Diff(tt.want, tt.got, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
 			t.Fatalf("For mismatch (-want +got):\n%s", diff)

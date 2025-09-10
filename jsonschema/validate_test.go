@@ -13,6 +13,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // The test for validation uses the official test suite, expressed as a set of JSON files.
@@ -256,6 +259,187 @@ func TestStructInstance(t *testing.T) {
 		} else if err != nil && tt.want {
 			t.Errorf("Validate: %v\nschema = %s", err, tt.s.json())
 		}
+	}
+}
+
+func TestStructEmbedding(t *testing.T) {
+	// For exported pointer embedding
+	type Apple struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type Banana struct {
+		*Apple        // Pointer embedded - should flatten.
+		Extra  string `json:"extra"`
+	}
+
+	// For unexported pointer embedding
+	type cranberry struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type Durian struct {
+		*cranberry        // Pointer embedded - should flatten.
+		Extra      string `json:"extra"`
+	}
+
+	// For exported value embedding
+	type Elderberry struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type Fig struct {
+		Elderberry        // Value embedded - should flatten.
+		Extra      string `json:"extra"`
+	}
+
+	// For unexported value embedding
+	type grape struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	type Honeyberry struct {
+		grape        // Value embedded - should flatten.
+		Extra string `json:"extra"`
+	}
+
+	// For outer field shadowing a pointer embed
+	type Inner struct {
+		Conflict  string `json:"conflict_field"` // This string field should be ignored.
+		InnerOnly string `json:"inner_only"`
+	}
+	type Outer struct {
+		*Inner
+		Conflict int `json:"conflict_field"` // This int field should take precedence.
+	}
+
+	testCases := []struct {
+		name          string
+		targetType    reflect.Type
+		wantSchema    *Schema
+		validInstance any
+	}{
+		{
+			name:       "ExportedPointer",
+			targetType: reflect.TypeOf([]Banana{}),
+			wantSchema: &Schema{
+				Type: "array",
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				},
+			},
+			validInstance: []Banana{
+				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
+			name:       "UnExportedPointer",
+			targetType: reflect.TypeOf([]Durian{}),
+			wantSchema: &Schema{
+				Type: "array",
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				},
+			},
+			validInstance: []Durian{
+				{cranberry: &cranberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{cranberry: &cranberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
+			name:       "ExportedValue",
+			targetType: reflect.TypeOf([]Fig{}),
+			wantSchema: &Schema{
+				Type: "array",
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				},
+			},
+			validInstance: []Fig{
+				{Elderberry: Elderberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{Elderberry: Elderberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
+			name:       "UnExportedValue",
+			targetType: reflect.TypeOf([]Honeyberry{}),
+			wantSchema: &Schema{
+				Type: "array",
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				},
+			},
+			validInstance: []Honeyberry{
+				{grape: grape{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{grape: grape{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
+			name:       "FieldShadowing",
+			targetType: reflect.TypeOf(Outer{}),
+			wantSchema: &Schema{
+				Type: "object",
+				Properties: map[string]*Schema{
+					// The "integer" from the Outer struct takes precedence.
+					"conflict_field": {Type: "integer"},
+					// The non-conflicting field from the Inner struct is still present.
+					"inner_only": {Type: "string"},
+				},
+				Required:             []string{"inner_only", "conflict_field"},
+				AdditionalProperties: falseSchema(),
+			},
+			validInstance: Outer{Inner: &Inner{InnerOnly: "data"}, Conflict: 123},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			schema, err := ForType(tc.targetType, &ForOptions{})
+			if err != nil {
+				t.Fatalf("ForType() returned an unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(tc.wantSchema, schema, cmpopts.IgnoreUnexported(Schema{})); diff != "" {
+				t.Fatalf("Schema mismatch (-want +got):\n%s", diff)
+			}
+			resolved, err := schema.Resolve(nil)
+			if err != nil {
+				t.Fatalf("schema.Resolve() failed: %v", err)
+			}
+			// Validate a correct instance against the generated schema.
+			if err := resolved.Validate(tc.validInstance); err != nil {
+				t.Errorf("resolved.Validate() failed on a valid instance: %v", err)
+			}
+		})
 	}
 }
 
