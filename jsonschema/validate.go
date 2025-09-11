@@ -440,13 +440,27 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			}
 		}
 		if schema.AdditionalProperties != nil {
-			// Apply to all properties not handled above.
-			for prop, val := range properties(instance) {
-				if !evalProps[prop] {
-					if err := st.validate(val, schema.AdditionalProperties, nil); err != nil {
-						return err
+			// Special case for a better error message when additional properties is
+			// false.
+			if Equal(schema.AdditionalProperties, falseSchema()) {
+				var disallowed []string
+				for prop := range properties(instance) {
+					if !evalProps[prop] {
+						disallowed = append(disallowed, prop)
 					}
-					evalProps[prop] = true
+				}
+				if len(disallowed) > 0 {
+					return fmt.Errorf("unexpected additional properties %q", disallowed)
+				}
+			} else {
+				// Apply to all properties not handled above.
+				for prop, val := range properties(instance) {
+					if !evalProps[prop] {
+						if err := st.validate(val, schema.AdditionalProperties, nil); err != nil {
+							return err
+						}
+						evalProps[prop] = true
+					}
 				}
 			}
 		}
@@ -614,6 +628,10 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 
 	schemaInfo := st.rs.resolvedInfos[schema]
 	instance := instancep.Elem()
+	if instance.Kind() == reflect.Interface && instance.IsValid() {
+		// If we unmarshalled into 'any', the default object unmarshalling will be map[string]any.
+		instance = instance.Elem()
+	}
 	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {
 		if instance.Kind() == reflect.Map {
 			if kt := instance.Type().Key(); kt.Kind() != reflect.String {
