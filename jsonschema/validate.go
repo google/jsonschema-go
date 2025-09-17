@@ -442,7 +442,9 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		if schema.AdditionalProperties != nil {
 			// Special case for a better error message when additional properties is
 			// false.
-			if Equal(schema.AdditionalProperties, falseSchema()) {
+			// Note: this is much faster than comparing with falseSchema using Equal.
+			isFalse := schema.AdditionalProperties.Not != nil && reflect.ValueOf(*schema.AdditionalProperties.Not).IsZero()
+			if isFalse {
 				var disallowed []string
 				for prop := range properties(instance) {
 					if !evalProps[prop] {

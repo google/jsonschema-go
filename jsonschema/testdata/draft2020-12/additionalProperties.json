@@ -18,9 +18,9 @@
             {
                 "description": "an additional property is invalid",
                 "data": {"foo" : 1, "bar" : 2, "quux" : "boom"},
-                "valid": false
-            },
-            {
+                "valid": false,
+                "errContains": "unexpected additional properties [\"quux\"]"
+            }, {
                 "description": "ignores arrays",
                 "data": [1, 2, 3],
                 "valid": true
@@ -59,7 +59,8 @@
             {
                 "description": "not matching the pattern is invalid",
                 "data": {"élmény": 2},
-                "valid": false
+                "valid": false,
+                "errContains": "unexpected additional properties"
             }
         ]
     },
@@ -85,7 +86,8 @@
             {
                 "description": "an additional invalid property is invalid",
                 "data": {"foo" : 1, "bar" : 2, "quux" : 12},
-                "valid": false
+                "valid": false,
+                "errContains": "has type \"integer\", want \"boolean\""
             }
         ]
     },
@@ -105,7 +107,8 @@
             {
                 "description": "an additional invalid property is invalid",
                 "data": {"foo" : 1},
-                "valid": false
+                "valid": false,
+                "errContains": "has type \"integer\", want \"boolean\""
             }
         ]
     },
@@ -138,7 +141,8 @@
             {
                 "description": "properties defined in allOf are not examined",
                 "data": {"foo": 1, "bar": true},
-                "valid": false
+                "valid": false,
+                "errContains": "has type \"integer\", want \"boolean\""
             }
         ]
     },
