@@ -6,6 +6,7 @@ package jsonschema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"iter"
@@ -399,11 +400,13 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 	// objects
 	// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.2
-	if instance.Kind() == reflect.Map || instance.Kind() == reflect.Struct {
-		if instance.Kind() == reflect.Map {
-			if kt := instance.Type().Key(); kt.Kind() != reflect.String {
-				return fmt.Errorf("map key type %s is not a string", kt)
-			}
+	// Validating structs is problematic. See https://github.com/google/jsonschema-go/issues/23.
+	if instance.Kind() == reflect.Struct {
+		return errors.New("cannot validate against a struct; see https://github.com/google/jsonschema-go/issues/23 for details")
+	}
+	if instance.Kind() == reflect.Map {
+		if kt := instance.Type().Key(); kt.Kind() != reflect.String {
+			return fmt.Errorf("map key type %s is not a string", kt)
 		}
 		// Track the evaluated properties for just this schema, to support additionalProperties.
 		// If we used anns here, then we'd be including properties evaluated in subschemas
