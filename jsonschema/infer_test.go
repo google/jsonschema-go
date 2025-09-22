@@ -25,8 +25,8 @@ func forType[T any](ignore bool) *jsonschema.Schema {
 
 	opts := &jsonschema.ForOptions{
 		IgnoreInvalidTypes: ignore,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
 		},
 	}
 	s, err = jsonschema.For[T](opts)
@@ -178,8 +178,8 @@ func TestForType(t *testing.T) {
 	// ForType is virtually identical to For. Just test that options are handled properly.
 	opts := &jsonschema.ForOptions{
 		IgnoreInvalidTypes: true,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
 		},
 	}
 
