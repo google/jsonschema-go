@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -99,6 +100,11 @@ func ForType(t reflect.Type, opts *ForOptions) (*Schema, error) {
 	return s, nil
 }
 
+// Helper to create a *float64 pointer from a value
+func f64Ptr(f float64) *float64 {
+	return &f
+}
+
 func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas map[reflect.Type]*Schema) (*Schema, error) {
 	// Follow pointers: the schema for *T is almost the same as for T, except that
 	// an explicit JSON "null" is allowed for the pointer.
@@ -131,10 +137,42 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 	case reflect.Bool:
 		s.Type = "boolean"
 
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Uintptr:
+	case reflect.Int, reflect.Int64:
 		s.Type = "integer"
+
+	case reflect.Uint, reflect.Uint64, reflect.Uintptr:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+
+	case reflect.Int8:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt8)
+		s.Maximum = f64Ptr(math.MaxInt8)
+
+	case reflect.Uint8:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint8)
+
+	case reflect.Int16:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt16)
+		s.Maximum = f64Ptr(math.MaxInt16)
+
+	case reflect.Uint16:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint16)
+
+	case reflect.Int32:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt32)
+		s.Maximum = f64Ptr(math.MaxInt32)
+
+	case reflect.Uint32:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint32)
 
 	case reflect.Float32, reflect.Float64:
 		s.Type = "number"
