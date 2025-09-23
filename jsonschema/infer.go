@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -26,12 +27,12 @@ type ForOptions struct {
 	IgnoreInvalidTypes bool
 
 	// TypeSchemas maps types to their schemas.
-	// If [For] encounters a type equal to a type of a key in this map, the
+	// If [For] encounters a type that is a key in this map, the
 	// corresponding value is used as the resulting schema (after cloning to
 	// ensure uniqueness).
 	// Types in this map override the default translations, as described
 	// in [For]'s documentation.
-	TypeSchemas map[any]*Schema
+	TypeSchemas map[reflect.Type]*Schema
 }
 
 // For constructs a JSON schema object for the given type argument.
@@ -78,9 +79,7 @@ func For[T any](opts *ForOptions) (*Schema, error) {
 	}
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
-	for v, s := range opts.TypeSchemas {
-		schemas[reflect.TypeOf(v)] = s
-	}
+	maps.Copy(schemas, opts.TypeSchemas)
 	s, err := forType(reflect.TypeFor[T](), map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
 	if err != nil {
 		var z T
@@ -93,14 +92,17 @@ func For[T any](opts *ForOptions) (*Schema, error) {
 func ForType(t reflect.Type, opts *ForOptions) (*Schema, error) {
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
-	for v, s := range opts.TypeSchemas {
-		schemas[reflect.TypeOf(v)] = s
-	}
+	maps.Copy(schemas, opts.TypeSchemas)
 	s, err := forType(t, map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("ForType(%s): %w", t, err)
 	}
 	return s, nil
+}
+
+// Helper to create a *float64 pointer from a value
+func f64Ptr(f float64) *float64 {
+	return &f
 }
 
 func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas map[reflect.Type]*Schema) (*Schema, error) {
@@ -135,10 +137,42 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 	case reflect.Bool:
 		s.Type = "boolean"
 
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Uintptr:
+	case reflect.Int, reflect.Int64:
 		s.Type = "integer"
+
+	case reflect.Uint, reflect.Uint64, reflect.Uintptr:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+
+	case reflect.Int8:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt8)
+		s.Maximum = f64Ptr(math.MaxInt8)
+
+	case reflect.Uint8:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint8)
+
+	case reflect.Int16:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt16)
+		s.Maximum = f64Ptr(math.MaxInt16)
+
+	case reflect.Uint16:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint16)
+
+	case reflect.Int32:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(math.MinInt32)
+		s.Maximum = f64Ptr(math.MaxInt32)
+
+	case reflect.Uint32:
+		s.Type = "integer"
+		s.Minimum = f64Ptr(0)
+		s.Maximum = f64Ptr(math.MaxUint32)
 
 	case reflect.Float32, reflect.Float64:
 		s.Type = "number"

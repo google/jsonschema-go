@@ -6,6 +6,7 @@ package jsonschema_test
 
 import (
 	"log/slog"
+	"math"
 	"math/big"
 	"reflect"
 	"strings"
@@ -25,8 +26,8 @@ func forType[T any](ignore bool) *jsonschema.Schema {
 
 	opts := &jsonschema.ForOptions{
 		IgnoreInvalidTypes: ignore,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
 		},
 	}
 	s, err = jsonschema.For[T](opts)
@@ -49,12 +50,46 @@ func TestFor(t *testing.T) {
 		want *jsonschema.Schema
 	}
 
+	f64Ptr := jsonschema.Ptr[float64]
+
 	tests := func(ignore bool) []test {
 		return []test{
 			{"string", forType[string](ignore), &schema{Type: "string"}},
+			{
+				"int8",
+				forType[int8](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt8), Maximum: f64Ptr(math.MaxInt8)},
+			},
+			{
+				"uint8",
+				forType[uint8](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint8)},
+			},
+			{
+				"int16",
+				forType[int16](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt16), Maximum: f64Ptr(math.MaxInt16)},
+			},
+			{
+				"uint16",
+				forType[uint16](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint16)},
+			},
+			{
+				"int32",
+				forType[int32](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt32), Maximum: f64Ptr(math.MaxInt32)},
+			},
+			{
+				"uint32",
+				forType[uint32](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint32)},
+			},
+			{"int64", forType[int64](ignore), &schema{Type: "integer"}},
+			{"uint64", forType[uint64](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
 			{"int", forType[int](ignore), &schema{Type: "integer"}},
-			{"int16", forType[int16](ignore), &schema{Type: "integer"}},
-			{"uint32", forType[int16](ignore), &schema{Type: "integer"}},
+			{"uint", forType[uint](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
+			{"uintptr", forType[uintptr](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
 			{"float64", forType[float64](ignore), &schema{Type: "number"}},
 			{"bool", forType[bool](ignore), &schema{Type: "boolean"}},
 			{"time", forType[time.Time](ignore), &schema{Type: "string"}},
@@ -64,6 +99,10 @@ func TestFor(t *testing.T) {
 			{"intmap", forType[map[string]int](ignore), &schema{
 				Type:                 "object",
 				AdditionalProperties: &schema{Type: "integer"},
+			}},
+			{"int8map", forType[map[string]int8](ignore), &schema{
+				Type:                 "object",
+				AdditionalProperties: &schema{Type: "integer", Minimum: f64Ptr(math.MinInt8), Maximum: f64Ptr(math.MaxInt8)},
 			}},
 			{"anymap", forType[map[string]any](ignore), &schema{
 				Type:                 "object",
