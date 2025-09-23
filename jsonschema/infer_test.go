@@ -6,6 +6,7 @@ package jsonschema_test
 
 import (
 	"log/slog"
+	"math"
 	"math/big"
 	"reflect"
 	"strings"
@@ -25,8 +26,8 @@ func forType[T any](ignore bool) *jsonschema.Schema {
 
 	opts := &jsonschema.ForOptions{
 		IgnoreInvalidTypes: ignore,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
 		},
 	}
 	s, err = jsonschema.For[T](opts)
@@ -49,12 +50,46 @@ func TestFor(t *testing.T) {
 		want *jsonschema.Schema
 	}
 
+	f64Ptr := jsonschema.Ptr[float64]
+
 	tests := func(ignore bool) []test {
 		return []test{
 			{"string", forType[string](ignore), &schema{Type: "string"}},
+			{
+				"int8",
+				forType[int8](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt8), Maximum: f64Ptr(math.MaxInt8)},
+			},
+			{
+				"uint8",
+				forType[uint8](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint8)},
+			},
+			{
+				"int16",
+				forType[int16](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt16), Maximum: f64Ptr(math.MaxInt16)},
+			},
+			{
+				"uint16",
+				forType[uint16](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint16)},
+			},
+			{
+				"int32",
+				forType[int32](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(math.MinInt32), Maximum: f64Ptr(math.MaxInt32)},
+			},
+			{
+				"uint32",
+				forType[uint32](ignore),
+				&schema{Type: "integer", Minimum: f64Ptr(0), Maximum: f64Ptr(math.MaxUint32)},
+			},
+			{"int64", forType[int64](ignore), &schema{Type: "integer"}},
+			{"uint64", forType[uint64](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
 			{"int", forType[int](ignore), &schema{Type: "integer"}},
-			{"int16", forType[int16](ignore), &schema{Type: "integer"}},
-			{"uint32", forType[int16](ignore), &schema{Type: "integer"}},
+			{"uint", forType[uint](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
+			{"uintptr", forType[uintptr](ignore), &schema{Type: "integer", Minimum: f64Ptr(0)}},
 			{"float64", forType[float64](ignore), &schema{Type: "number"}},
 			{"bool", forType[bool](ignore), &schema{Type: "boolean"}},
 			{"time", forType[time.Time](ignore), &schema{Type: "string"}},
@@ -64,6 +99,10 @@ func TestFor(t *testing.T) {
 			{"intmap", forType[map[string]int](ignore), &schema{
 				Type:                 "object",
 				AdditionalProperties: &schema{Type: "integer"},
+			}},
+			{"int8map", forType[map[string]int8](ignore), &schema{
+				Type:                 "object",
+				AdditionalProperties: &schema{Type: "integer", Minimum: f64Ptr(math.MinInt8), Maximum: f64Ptr(math.MaxInt8)},
 			}},
 			{"anymap", forType[map[string]any](ignore), &schema{
 				Type:                 "object",
@@ -173,10 +212,12 @@ func TestFor(t *testing.T) {
 }
 
 func TestForType(t *testing.T) {
+	// This tests embedded structs with a custom schema in addition to ForType.
 	type schema = jsonschema.Schema
 
 	type E struct {
-		G float64
+		G float64 // promoted into S
+		B int     // hidden by S.B
 	}
 
 	type S struct {
@@ -187,12 +228,17 @@ func TestForType(t *testing.T) {
 		B bool
 	}
 
-	// ForType is virtually identical to For. Just test that options are handled properly.
 	opts := &jsonschema.ForOptions{
 		IgnoreInvalidTypes: true,
-		TypeSchemas: map[any]*jsonschema.Schema{
-			custom(0): {Type: "custom"},
-			E{}:       {Properties: map[string]*jsonschema.Schema{"G": {Type: "integer"}}},
+		TypeSchemas: map[reflect.Type]*schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
+			reflect.TypeFor[E](): {
+				Type: "object",
+				Properties: map[string]*schema{
+					"G": {Type: "integer"},
+					"B": {Type: "integer"},
+				},
+			},
 		},
 	}
 	got, err := jsonschema.ForType(reflect.TypeOf(S{}), opts)
@@ -212,6 +258,69 @@ func TestForType(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
 		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCustomEmbeddedError(t *testing.T) {
+	// Disallow anything but "type" and "properties".
+	type schema = jsonschema.Schema
+
+	type (
+		E struct{ G int }
+		S struct{ E }
+	)
+
+	for _, tt := range []struct {
+		name     string
+		override *schema
+	}{
+		{
+			"missing type",
+			&schema{},
+		},
+		{
+			"wrong type",
+			&schema{Type: "number"},
+		},
+		{
+			"extra string field",
+			&schema{
+				Type:  "object",
+				Title: "t",
+			},
+		},
+		{
+			"extra pointer field",
+			&schema{
+				Type:          "object",
+				MinProperties: jsonschema.Ptr(1),
+			},
+		},
+		{
+			"extra array field",
+			&schema{
+				Type:     "object",
+				Required: []string{"G"},
+			},
+		},
+		{
+			"extra schema field",
+			&schema{
+				Type:                 "object",
+				AdditionalProperties: falseSchema(),
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &jsonschema.ForOptions{
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[E](): tt.override,
+				},
+			}
+			if _, err := jsonschema.ForType(reflect.TypeOf(S{}), opts); err == nil {
+				t.Error("got nil, want error")
+			}
+		})
 	}
 }
 

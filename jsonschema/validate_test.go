@@ -33,6 +33,7 @@ type test struct {
 	Description string
 	Data        any
 	Valid       bool
+	ErrContains string
 }
 
 func TestValidate(t *testing.T) {
@@ -68,6 +69,11 @@ func TestValidate(t *testing.T) {
 							}
 							if err == nil && !test.Valid {
 								t.Error("succeeded but wanted failure")
+							}
+							if err != nil && test.ErrContains != "" {
+								if !strings.Contains(err.Error(), test.ErrContains) {
+									t.Errorf("got error %q, want containing %q", err, test.ErrContains)
+								}
 							}
 							if t.Failed() {
 								t.Errorf("schema: %s", g.Schema.json())
@@ -254,10 +260,9 @@ func TestStructInstance(t *testing.T) {
 			t.Fatal(err)
 		}
 		err = res.Validate(instance)
-		if err == nil && !tt.want {
-			t.Errorf("succeeded unexpectedly\nschema = %s", tt.s.json())
-		} else if err != nil && tt.want {
-			t.Errorf("Validate: %v\nschema = %s", err, tt.s.json())
+		// Validating a struct always fails.
+		if err == nil {
+			t.Error("struct validation succeeded")
 		}
 	}
 }
@@ -436,8 +441,9 @@ func TestStructEmbedding(t *testing.T) {
 				t.Fatalf("schema.Resolve() failed: %v", err)
 			}
 			// Validate a correct instance against the generated schema.
-			if err := resolved.Validate(tc.validInstance); err != nil {
-				t.Errorf("resolved.Validate() failed on a valid instance: %v", err)
+			// Struct validation always fails.
+			if err := resolved.Validate(tc.validInstance); err == nil {
+				t.Error("struct validation succeeded")
 			}
 		})
 	}
