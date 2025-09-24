@@ -221,9 +221,61 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		s.Type = "object"
 		// no additional properties are allowed
 		s.AdditionalProperties = falseSchema()
+
+		// If skipPath is non-nil, it is path to an anonymous field whose
+		// schema has been replaced by a known schema.
+		var skipPath []int
 		for _, field := range reflect.VisibleFields(t) {
 			if field.Anonymous {
+				override := schemas[field.Type]
+				if override != nil {
+					// Type must be object, and only properties can be set.
+					if override.Type != "object" {
+						return nil, fmt.Errorf(`custom schema for embedded struct must have type "object", got %q`,
+							override.Type)
+					}
+					// Check that all keywords relevant for objects are absent, except properties.
+					ov := reflect.ValueOf(override).Elem()
+					for _, sfi := range schemaFieldInfos {
+						if sfi.sf.Name == "Type" || sfi.sf.Name == "Properties" {
+							continue
+						}
+						fv := ov.FieldByIndex(sfi.sf.Index)
+						if !fv.IsZero() {
+							return nil, fmt.Errorf(`overrides for embedded fields can have only "Type" and "Properties"; this has %q`, sfi.sf.Name)
+						}
+					}
+
+					skipPath = field.Index
+					for name, prop := range override.Properties {
+						s.Properties[name] = prop.CloneSchemas()
+					}
+				}
 				continue
+			}
+
+			// Check to see if this field has been promoted from a replaced anonymous
+			// type.
+			if skipPath != nil {
+				skip := false
+				if len(field.Index) >= len(skipPath) {
+					skip = true
+					for i, index := range skipPath {
+						if field.Index[i] != index {
+							// If we're no longer in a subfield.
+							skip = false
+							break
+						}
+					}
+				}
+				if skip {
+					continue
+				} else {
+					// Anonymous fields are followed immediately by their promoted fields.
+					// Once we encounter a field that *isn't* promoted, we can stop
+					// checking.
+					skipPath = nil
+				}
 			}
 
 			info := fieldJSONInfo(field)

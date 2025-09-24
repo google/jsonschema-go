@@ -212,20 +212,34 @@ func TestFor(t *testing.T) {
 }
 
 func TestForType(t *testing.T) {
+	// This tests embedded structs with a custom schema in addition to ForType.
 	type schema = jsonschema.Schema
 
-	// ForType is virtually identical to For. Just test that options are handled properly.
-	opts := &jsonschema.ForOptions{
-		IgnoreInvalidTypes: true,
-		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-			reflect.TypeFor[custom](): {Type: "custom"},
-		},
+	type E struct {
+		G float64 // promoted into S
+		B int     // hidden by S.B
 	}
 
 	type S struct {
 		I int
 		F func()
 		C custom
+		E
+		B bool
+	}
+
+	opts := &jsonschema.ForOptions{
+		IgnoreInvalidTypes: true,
+		TypeSchemas: map[reflect.Type]*schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
+			reflect.TypeFor[E](): {
+				Type: "object",
+				Properties: map[string]*schema{
+					"G": {Type: "integer"},
+					"B": {Type: "integer"},
+				},
+			},
+		},
 	}
 	got, err := jsonschema.ForType(reflect.TypeOf(S{}), opts)
 	if err != nil {
@@ -236,12 +250,77 @@ func TestForType(t *testing.T) {
 		Properties: map[string]*schema{
 			"I": {Type: "integer"},
 			"C": {Type: "custom"},
+			"G": {Type: "integer"},
+			"B": {Type: "boolean"},
 		},
-		Required:             []string{"I", "C"},
+		Required:             []string{"I", "C", "B"},
 		AdditionalProperties: falseSchema(),
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
 		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCustomEmbeddedError(t *testing.T) {
+	// Disallow anything but "type" and "properties".
+	type schema = jsonschema.Schema
+
+	type (
+		E struct{ G int }
+		S struct{ E }
+	)
+
+	for _, tt := range []struct {
+		name     string
+		override *schema
+	}{
+		{
+			"missing type",
+			&schema{},
+		},
+		{
+			"wrong type",
+			&schema{Type: "number"},
+		},
+		{
+			"extra string field",
+			&schema{
+				Type:  "object",
+				Title: "t",
+			},
+		},
+		{
+			"extra pointer field",
+			&schema{
+				Type:          "object",
+				MinProperties: jsonschema.Ptr(1),
+			},
+		},
+		{
+			"extra array field",
+			&schema{
+				Type:     "object",
+				Required: []string{"G"},
+			},
+		},
+		{
+			"extra schema field",
+			&schema{
+				Type:                 "object",
+				AdditionalProperties: falseSchema(),
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &jsonschema.ForOptions{
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[E](): tt.override,
+				},
+			}
+			if _, err := jsonschema.ForType(reflect.TypeOf(S{}), opts); err == nil {
+				t.Error("got nil, want error")
+			}
+		})
 	}
 }
 
