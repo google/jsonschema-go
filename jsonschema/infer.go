@@ -90,6 +90,9 @@ func For[T any](opts *ForOptions) (*Schema, error) {
 
 // ForType is like [For], but takes a [reflect.Type]
 func ForType(t reflect.Type, opts *ForOptions) (*Schema, error) {
+	if opts == nil {
+		opts = &ForOptions{}
+	}
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
 	maps.Copy(schemas, opts.TypeSchemas)
