@@ -15,10 +15,10 @@ the tests.
 ## Issues
 
 This project uses the [GitHub issue
-tracker](https://github.com/TODO/jsonschema-go/issues) for bug reports, feature requests, and other issues. 
+tracker](https://github.com/google/jsonschema-go/issues) for bug reports, feature requests, and other issues. 
 
 Please [report
-bugs](https://github.com/TODO/jsonschema-go/issues/new). If the SDK is
+bugs](https://github.com/google/jsonschema-go/issues/new). If the SDK is
 not working as you expected, it is likely due to a bug or inadequate
 documentation, and reporting an issue will help us address this shortcoming.
 
