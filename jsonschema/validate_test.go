@@ -174,6 +174,128 @@ func TestApplyDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyDefaults_recursively_applies_nested_defaults(t *testing.T) {
+	base := &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"A": {
+				Type: "object",
+				Properties: map[string]*Schema{
+					"B": {Type: "string", Default: mustMarshal("foo")},
+				},
+			},
+		},
+	}
+	// Variant where parent A has its own default object; recursion should still fill B.
+	withParentDefault := &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"A": {
+				Type:    "object",
+				Default: mustMarshal(map[string]any{"X": 1}),
+				Properties: map[string]*Schema{
+					"B": {Type: "string", Default: mustMarshal("foo")},
+				},
+			},
+		},
+	}
+
+	type Nested struct{ B string }
+	type Root struct{ A Nested }
+	type RootPtr struct{ A *Nested }
+	type RootMap struct{ A map[string]any }
+
+	for _, tc := range []struct {
+		name      string
+		schema    *Schema
+		instancep any
+		want      any
+	}{
+		{
+			name:      "map_missing_parent",
+			schema:    base,
+			instancep: &map[string]any{},
+			want:      map[string]any{"A": map[string]any{"B": "foo"}},
+		},
+		{
+			name:      "map_empty_parent",
+			schema:    base,
+			instancep: &map[string]any{"A": map[string]any{}},
+			want:      map[string]any{"A": map[string]any{"B": "foo"}},
+		},
+		{
+			name:      "map_parent_has_default_object_missing",
+			schema:    withParentDefault,
+			instancep: &map[string]any{},
+			want:      map[string]any{"A": map[string]any{"X": float64(1), "B": "foo"}},
+		},
+		{
+			name:      "map_parent_has_default_object_present",
+			schema:    withParentDefault,
+			instancep: &map[string]any{"A": map[string]any{}},
+			// Parent default is applied only when the property is missing, so
+			// with the key present (even if empty), we apply only the nested defaults.
+			want: map[string]any{"A": map[string]any{"B": "foo"}},
+		},
+		{
+			name:      "struct_zero_value_parent",
+			schema:    base,
+			instancep: &Root{},
+			want:      Root{A: Nested{B: "foo"}},
+		},
+		{
+			name:      "struct_pointer_nil_parent",
+			schema:    base,
+			instancep: &RootPtr{},
+			want:      RootPtr{A: &Nested{B: "foo"}},
+		},
+		{
+			name:      "struct_present_nonzero_child_preserved",
+			schema:    base,
+			instancep: &Root{A: Nested{B: "bar"}},
+			want:      Root{A: Nested{B: "bar"}},
+		},
+		{
+			name:      "struct_pointer_non_nil_child_preserved",
+			schema:    base,
+			instancep: &RootPtr{A: &Nested{B: "bar"}},
+			want:      RootPtr{A: &Nested{B: "bar"}},
+		},
+		{
+			name:      "struct_map_nil_parent",
+			schema:    base,
+			instancep: &RootMap{},
+			want:      RootMap{A: map[string]any{"B": "foo"}},
+		},
+		{
+			name:      "struct_map_parent_default_object_missing",
+			schema:    withParentDefault,
+			instancep: &RootMap{},
+			want:      RootMap{A: map[string]any{"X": float64(1), "B": "foo"}},
+		},
+		{
+			name:      "struct_map_parent_default_object_present",
+			schema:    withParentDefault,
+			instancep: &RootMap{A: map[string]any{}},
+			want:      RootMap{A: map[string]any{"B": "foo"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rs, err := tc.schema.Resolve(&ResolveOptions{ValidateDefaults: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := rs.ApplyDefaults(tc.instancep); err != nil {
+				t.Fatal(err)
+			}
+			got := reflect.ValueOf(tc.instancep).Elem().Interface()
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("nested defaults:\n got  %#v\n want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStructInstance(t *testing.T) {
 	instance := struct {
 		I int
