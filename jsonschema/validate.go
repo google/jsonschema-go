@@ -670,7 +670,7 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 					}
 					instance.SetMapIndex(reflect.ValueOf(prop), lvalue.Elem())
 				} else if val.IsValid() {
-					// Recurse into an existing sub-instance if it is object-like.
+					// Recurse into an existing sub-instance.
 					// MapIndex returns a non-addressable value; copy into an addressable lvalue, recurse, then set back.
 					lvalue := reflect.New(instance.Type().Elem())
 					// Initialize the lvalue with current value.

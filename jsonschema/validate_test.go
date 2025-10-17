@@ -174,7 +174,7 @@ func TestApplyDefaults(t *testing.T) {
 	}
 }
 
-func TestApplyDefaults_recursively_applies_nested_defaults(t *testing.T) {
+func TestApplyNestedDefaults(t *testing.T) {
 	base := &Schema{
 		Type: "object",
 		Properties: map[string]*Schema{
@@ -204,6 +204,9 @@ func TestApplyDefaults_recursively_applies_nested_defaults(t *testing.T) {
 	type Root struct{ A Nested }
 	type RootPtr struct{ A *Nested }
 	type RootMap struct{ A map[string]any }
+	type RootPtrMap struct{ A *map[string]any }
+
+	mapPtr := func(m map[string]any) *map[string]any { return &m }
 
 	for _, tc := range []struct {
 		name      string
@@ -212,25 +215,25 @@ func TestApplyDefaults_recursively_applies_nested_defaults(t *testing.T) {
 		want      any
 	}{
 		{
-			name:      "map_missing_parent",
+			name:      "MapMissingParent",
 			schema:    base,
 			instancep: &map[string]any{},
 			want:      map[string]any{"A": map[string]any{"B": "foo"}},
 		},
 		{
-			name:      "map_empty_parent",
+			name:      "MapEmptyParent",
 			schema:    base,
 			instancep: &map[string]any{"A": map[string]any{}},
 			want:      map[string]any{"A": map[string]any{"B": "foo"}},
 		},
 		{
-			name:      "map_parent_has_default_object_missing",
+			name:      "MapParentHasDefaultObjectMissing",
 			schema:    withParentDefault,
 			instancep: &map[string]any{},
 			want:      map[string]any{"A": map[string]any{"X": float64(1), "B": "foo"}},
 		},
 		{
-			name:      "map_parent_has_default_object_present",
+			name:      "MapParentHasDefaultObjectPresent",
 			schema:    withParentDefault,
 			instancep: &map[string]any{"A": map[string]any{}},
 			// Parent default is applied only when the property is missing, so
@@ -238,45 +241,86 @@ func TestApplyDefaults_recursively_applies_nested_defaults(t *testing.T) {
 			want: map[string]any{"A": map[string]any{"B": "foo"}},
 		},
 		{
-			name:      "struct_zero_value_parent",
+			name:      "MapValueMapMissingParentTyped",
+			schema:    base,
+			instancep: &map[string]map[string]any{},
+			want:      map[string]map[string]any{"A": {"B": "foo"}},
+		},
+		{
+			name:      "MapValueStructMissingParentTyped",
+			schema:    base,
+			instancep: &map[string]Nested{},
+			want:      map[string]Nested{"A": {B: "foo"}},
+		},
+		{
+			name:      "StructZeroValueParent",
 			schema:    base,
 			instancep: &Root{},
 			want:      Root{A: Nested{B: "foo"}},
 		},
 		{
-			name:      "struct_pointer_nil_parent",
+			name:      "StructZeroValueParentWithParentDefault",
+			schema:    withParentDefault,
+			instancep: &Root{},
+			want:      Root{A: Nested{B: "foo"}},
+		},
+		{
+			name:      "StructPointerNilParent",
 			schema:    base,
 			instancep: &RootPtr{},
 			want:      RootPtr{A: &Nested{B: "foo"}},
 		},
 		{
-			name:      "struct_present_nonzero_child_preserved",
+			name:      "StructPresentNonzeroChildPreserved",
 			schema:    base,
 			instancep: &Root{A: Nested{B: "bar"}},
 			want:      Root{A: Nested{B: "bar"}},
 		},
 		{
-			name:      "struct_pointer_non_nil_child_preserved",
+			name:      "StructPointerNonNilChildPreserved",
 			schema:    base,
 			instancep: &RootPtr{A: &Nested{B: "bar"}},
 			want:      RootPtr{A: &Nested{B: "bar"}},
 		},
 		{
-			name:      "struct_map_nil_parent",
+			name:      "StructMapNilParent",
 			schema:    base,
 			instancep: &RootMap{},
 			want:      RootMap{A: map[string]any{"B": "foo"}},
 		},
 		{
-			name:      "struct_map_parent_default_object_missing",
+			name:      "StructMapParentDefaultObjectMissing",
 			schema:    withParentDefault,
 			instancep: &RootMap{},
 			want:      RootMap{A: map[string]any{"X": float64(1), "B": "foo"}},
 		},
 		{
-			name:      "struct_map_parent_default_object_present",
+			name:      "StructMapParentDefaultObjectPresent",
 			schema:    withParentDefault,
 			instancep: &RootMap{A: map[string]any{}},
+			want:      RootMap{A: map[string]any{"B": "foo"}},
+		},
+		{
+			name:      "StructPtrMapNilParent",
+			schema:    base,
+			instancep: &RootPtrMap{},
+			want:      RootPtrMap{A: mapPtr(map[string]any{"B": "foo"})},
+		},
+		{
+			name: "StructMapNilParentWithNullParentDefault",
+			schema: &Schema{
+				Type: "object",
+				Properties: map[string]*Schema{
+					"A": {
+						// Default null exercises map allocation in struct subschemas
+						Default: mustMarshal(nil),
+						Properties: map[string]*Schema{
+							"B": {Type: "string", Default: mustMarshal("foo")},
+						},
+					},
+				},
+			},
+			instancep: &RootMap{},
 			want:      RootMap{A: map[string]any{"B": "foo"}},
 		},
 	} {
