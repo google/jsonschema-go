@@ -627,13 +627,12 @@ func (st *state) resolveDynamicRef(schema *Schema) (*Schema, error) {
 func (rs *Resolved) ApplyDefaults(instancep any) error {
 	// TODO(jba): consider what defaults on top-level or array instances might mean.
 	// TODO(jba): follow $ref and $dynamicRef
-	// TODO(jba): apply defaults on sub-schemas to corresponding sub-instances.
 	st := &state{rs: rs}
 	return st.applyDefaults(reflect.ValueOf(instancep), rs.root)
 }
 
-// Leave this as a potentially recursive helper function, because we'll surely want
-// to apply defaults on sub-schemas someday.
+// Recursive helper used by ApplyDefaults. Applies defaults on sub-schemas
+// of object properties recursively.
 func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err error) {
 	defer wrapf(&err, "applyDefaults: schema %s, instance %v", st.rs.schemaString(schema), instancep)
 
@@ -665,7 +664,42 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 					if err := json.Unmarshal(subschema.Default, lvalue.Interface()); err != nil {
 						return err
 					}
+					// Recurse unconditionally; applyDefaults will only act on object-like values.
+					if err := st.applyDefaults(lvalue, subschema); err != nil {
+						return err
+					}
 					instance.SetMapIndex(reflect.ValueOf(prop), lvalue.Elem())
+				} else if val.IsValid() {
+					// Recurse into an existing sub-instance.
+					// MapIndex returns a non-addressable value; copy into an addressable lvalue, recurse, then set back.
+					lvalue := reflect.New(instance.Type().Elem())
+					// Initialize the lvalue with current value.
+					lvalue.Elem().Set(val)
+					if err := st.applyDefaults(lvalue, subschema); err != nil {
+						return err
+					}
+					instance.SetMapIndex(reflect.ValueOf(prop), lvalue.Elem())
+				} else if schemaHasDefaultsInProperties(subschema) {
+					// Property is missing, but descendants still have some defaults
+					// Create an empty container and recurse to populate
+					elemType := instance.Type().Elem()
+					var child reflect.Value
+					switch elemType.Kind() {
+					case reflect.Interface:
+						child = reflect.ValueOf(map[string]any{})
+					case reflect.Map:
+						child = reflect.MakeMap(elemType)
+					case reflect.Struct:
+						child = reflect.New(elemType).Elem()
+					}
+					if child.IsValid() {
+						lvalue := reflect.New(elemType)
+						lvalue.Elem().Set(child)
+						if err := st.applyDefaults(lvalue, subschema); err != nil {
+							return err
+						}
+						instance.SetMapIndex(reflect.ValueOf(prop), lvalue.Elem())
+					}
 				}
 			case reflect.Struct:
 				// If there is a default for this property, and the field exists but is zero,
@@ -673,6 +707,50 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 				if subschema.Default != nil && val.IsValid() && val.IsZero() {
 					if err := json.Unmarshal(subschema.Default, val.Addr().Interface()); err != nil {
 						return err
+					}
+					// Recurse into newly set object to apply deeper defaults.
+					if val.Kind() == reflect.Map {
+						if val.IsNil() {
+							val.Set(reflect.MakeMap(val.Type()))
+						}
+						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
+							return err
+						}
+					} else if val.Kind() == reflect.Struct {
+						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
+							return err
+						}
+					}
+				} else if val.IsValid() {
+					// Recurse into existing sub-instance when object-like.
+					switch val.Kind() {
+					case reflect.Map:
+						if val.IsNil() && schemaHasDefaultsInProperties(subschema) {
+							val.Set(reflect.MakeMap(val.Type()))
+						}
+						if !val.IsNil() {
+							if err := st.applyDefaults(val.Addr(), subschema); err != nil {
+								return err
+							}
+						}
+					case reflect.Struct:
+						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
+							return err
+						}
+					case reflect.Pointer:
+						et := val.Type().Elem()
+						if (et.Kind() == reflect.Map || et.Kind() == reflect.Struct) && val.IsNil() && schemaHasDefaultsInProperties(subschema) {
+							nv := reflect.New(et)
+							if et.Kind() == reflect.Map {
+								nv.Elem().Set(reflect.MakeMap(et))
+							}
+							val.Set(nv)
+						}
+						if !val.IsNil() && (et.Kind() == reflect.Map || et.Kind() == reflect.Struct) {
+							if err := st.applyDefaults(val, subschema); err != nil {
+								return err
+							}
+						}
 					}
 				}
 			default:
@@ -682,6 +760,25 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 		}
 	}
 	return nil
+}
+
+// schemaHasDefaultsInProperties reports whether s or any descendant schema under
+// its Properties contains a default. Only walks Properties to match ApplyDefaults semantics.
+func schemaHasDefaultsInProperties(s *Schema) bool {
+	if s == nil {
+		return false
+	}
+	if s.Default != nil {
+		return true
+	}
+	if s.Properties != nil {
+		for _, ss := range s.Properties {
+			if schemaHasDefaultsInProperties(ss) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // property returns the value of the property of v with the given name, or the invalid
