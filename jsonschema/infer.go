@@ -125,7 +125,12 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 	}
 
 	if s := schemas[t]; s != nil {
-		return s.CloneSchemas(), nil
+		cloned := s.CloneSchemas()
+		if allowNull && s.Type != "" {
+			cloned.Types = []string{"null", cloned.Type}
+			cloned.Type = ""
+		}
+		return cloned, nil
 	}
 
 	var (
