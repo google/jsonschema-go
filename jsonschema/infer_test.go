@@ -94,7 +94,8 @@ func TestFor(t *testing.T) {
 			{"bool", forType[bool](ignore), &schema{Type: "boolean"}},
 			{"time", forType[time.Time](ignore), &schema{Type: "string"}},
 			{"level", forType[slog.Level](ignore), &schema{Type: "string"}},
-			{"bigint", forType[big.Int](ignore), &schema{Types: []string{"null", "string"}}},
+			{"bigint", forType[big.Int](ignore), &schema{Type: "string"}},
+			{"bigint", forType[*big.Int](ignore), &schema{Types: []string{"null", "string"}}},
 			{"custom", forType[custom](ignore), &schema{Type: "custom"}},
 			{"intmap", forType[map[string]int](ignore), &schema{
 				Type:                 "object",

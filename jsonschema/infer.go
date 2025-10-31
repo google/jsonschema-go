@@ -12,6 +12,7 @@ import (
 	"maps"
 	"math"
 	"math/big"
+	"os"
 	"reflect"
 	"regexp"
 	"time"
@@ -126,7 +127,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 	if s := schemas[t]; s != nil {
 		cloned := s.CloneSchemas()
-		if allowNull && s.Type != "" {
+		if os.Getenv("JSONSCHEMAGODEBUG") != "typeschemasnull=1" && allowNull && s.Type != "" {
 			cloned.Types = []string{"null", cloned.Type}
 			cloned.Type = ""
 		}
@@ -334,7 +335,11 @@ func init() {
 	ss := &Schema{Type: "string"}
 	initialSchemaMap[reflect.TypeFor[time.Time]()] = ss
 	initialSchemaMap[reflect.TypeFor[slog.Level]()] = ss
-	initialSchemaMap[reflect.TypeFor[big.Int]()] = &Schema{Types: []string{"null", "string"}}
+	if os.Getenv("JSONSCHEMAGODEBUG") == "typeschemasnull=1" {
+		initialSchemaMap[reflect.TypeFor[big.Int]()] = &Schema{Types: []string{"null", "string"}}
+	} else {
+		initialSchemaMap[reflect.TypeFor[big.Int]()] = ss
+	}
 	initialSchemaMap[reflect.TypeFor[big.Rat]()] = ss
 	initialSchemaMap[reflect.TypeFor[big.Float]()] = ss
 }
