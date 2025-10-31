@@ -94,7 +94,8 @@ func TestFor(t *testing.T) {
 			{"bool", forType[bool](ignore), &schema{Type: "boolean"}},
 			{"time", forType[time.Time](ignore), &schema{Type: "string"}},
 			{"level", forType[slog.Level](ignore), &schema{Type: "string"}},
-			{"bigint", forType[big.Int](ignore), &schema{Types: []string{"null", "string"}}},
+			{"bigint", forType[big.Int](ignore), &schema{Type: "string"}},
+			{"bigint", forType[*big.Int](ignore), &schema{Types: []string{"null", "string"}}},
 			{"custom", forType[custom](ignore), &schema{Type: "custom"}},
 			{"intmap", forType[map[string]int](ignore), &schema{
 				Type:                 "object",
@@ -113,7 +114,8 @@ func TestFor(t *testing.T) {
 				forType[struct {
 					F           int `json:"f" jsonschema:"fdesc"`
 					G           []float64
-					P           *bool  `jsonschema:"pdesc"`
+					P           *bool `jsonschema:"pdesc"`
+					PT          *time.Time
 					Skip        string `json:"-"`
 					NoSkip      string `json:",omitempty"`
 					unexported  float64
@@ -125,9 +127,10 @@ func TestFor(t *testing.T) {
 						"f":      {Type: "integer", Description: "fdesc"},
 						"G":      {Type: "array", Items: &schema{Type: "number"}},
 						"P":      {Types: []string{"null", "boolean"}, Description: "pdesc"},
+						"PT":     {Types: []string{"null", "string"}},
 						"NoSkip": {Type: "string"},
 					},
-					Required:             []string{"f", "G", "P"},
+					Required:             []string{"f", "G", "P", "PT"},
 					AdditionalProperties: falseSchema(),
 				},
 			},
@@ -224,6 +227,7 @@ func TestForType(t *testing.T) {
 		I int
 		F func()
 		C custom
+		P *custom
 		E
 		B bool
 	}
@@ -250,10 +254,11 @@ func TestForType(t *testing.T) {
 		Properties: map[string]*schema{
 			"I": {Type: "integer"},
 			"C": {Type: "custom"},
+			"P": {Types: []string{"null", "custom"}},
 			"G": {Type: "integer"},
 			"B": {Type: "boolean"},
 		},
-		Required:             []string{"I", "C", "B"},
+		Required:             []string{"I", "C", "P", "B"},
 		AdditionalProperties: falseSchema(),
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
