@@ -15,8 +15,11 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"time"
 )
+
+const debugEnv = "JSONSCHEMAGODEBUG"
 
 // ForOptions are options for the [For] and [ForType] functions.
 type ForOptions struct {
@@ -127,9 +130,13 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 	if s := schemas[t]; s != nil {
 		cloned := s.CloneSchemas()
-		if os.Getenv("JSONSCHEMAGODEBUG") != "typeschemasnull=1" && allowNull && s.Type != "" {
-			cloned.Types = []string{"null", cloned.Type}
-			cloned.Type = ""
+		if os.Getenv(debugEnv) != "typeschemasnull=1" && allowNull {
+			if cloned.Type != "" {
+				cloned.Types = []string{"null", cloned.Type}
+				cloned.Type = ""
+			} else if !slices.Contains(cloned.Types, "null") {
+				cloned.Types = append([]string{"null"}, cloned.Types...)
+			}
 		}
 		return cloned, nil
 	}
@@ -335,7 +342,7 @@ func init() {
 	ss := &Schema{Type: "string"}
 	initialSchemaMap[reflect.TypeFor[time.Time]()] = ss
 	initialSchemaMap[reflect.TypeFor[slog.Level]()] = ss
-	if os.Getenv("JSONSCHEMAGODEBUG") == "typeschemasnull=1" {
+	if os.Getenv(debugEnv) == "typeschemasnull=1" {
 		initialSchemaMap[reflect.TypeFor[big.Int]()] = &Schema{Types: []string{"null", "string"}}
 	} else {
 		initialSchemaMap[reflect.TypeFor[big.Int]()] = ss

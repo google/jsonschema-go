@@ -223,13 +223,21 @@ func TestForType(t *testing.T) {
 		B int     // hidden by S.B
 	}
 
+	type M1 int
+	type M2 int
+
 	type S struct {
-		I int
-		F func()
-		C custom
-		P *custom
+		I  int
+		F  func()
+		C  custom
+		P  *custom
+		PP **custom
 		E
-		B bool
+		B   bool
+		M1  M1
+		PM1 *M1
+		M2  M2
+		PM2 *M2
 	}
 
 	opts := &jsonschema.ForOptions{
@@ -243,6 +251,8 @@ func TestForType(t *testing.T) {
 					"B": {Type: "integer"},
 				},
 			},
+			reflect.TypeFor[M1](): {Types: []string{"custom1", "custom2"}},
+			reflect.TypeFor[M2](): {Types: []string{"null", "custom3", "custom4"}},
 		},
 	}
 	got, err := jsonschema.ForType(reflect.TypeOf(S{}), opts)
@@ -252,13 +262,18 @@ func TestForType(t *testing.T) {
 	want := &schema{
 		Type: "object",
 		Properties: map[string]*schema{
-			"I": {Type: "integer"},
-			"C": {Type: "custom"},
-			"P": {Types: []string{"null", "custom"}},
-			"G": {Type: "integer"},
-			"B": {Type: "boolean"},
+			"I":   {Type: "integer"},
+			"C":   {Type: "custom"},
+			"P":   {Types: []string{"null", "custom"}},
+			"PP":  {Types: []string{"null", "custom"}},
+			"G":   {Type: "integer"},
+			"B":   {Type: "boolean"},
+			"M1":  {Types: []string{"custom1", "custom2"}},
+			"PM1": {Types: []string{"null", "custom1", "custom2"}},
+			"M2":  {Types: []string{"null", "custom3", "custom4"}},
+			"PM2": {Types: []string{"null", "custom3", "custom4"}},
 		},
-		Required:             []string{"I", "C", "P", "B"},
+		Required:             []string{"I", "C", "P", "PP", "B", "M1", "PM1", "M2", "PM2"},
 		AdditionalProperties: falseSchema(),
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
