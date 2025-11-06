@@ -36,7 +36,7 @@ type test struct {
 	ErrContains string
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateDraft2020_12(t *testing.T) {
 	files, err := filepath.Glob(filepath.FromSlash("testdata/draft2020-12/*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +44,21 @@ func TestValidate(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no files")
 	}
+	testValidate(t, files)
+}
+
+func TestValidateDraft7(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft7/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testValidate(t, files)
+}
+
+func testValidate(t *testing.T, files []string) {
 	for _, file := range files {
 		base := filepath.Base(file)
 		t.Run(base, func(t *testing.T) {
@@ -633,6 +648,14 @@ func loadRemote(uri *url.URL) (*Schema, error) {
 	const metaPrefix = "https://json-schema.org/draft/2020-12/"
 	if after, ok := strings.CutPrefix(uri.String(), metaPrefix); ok {
 		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft2020-12/" + after + ".json"))
+	}
+	const metaPrefixDraft7 = "https://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
+	}
+	const metaPrefixDraft7s = "http://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7s); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
 	}
 	return nil, fmt.Errorf("don't know how to load %s", uri)
 }
