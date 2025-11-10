@@ -96,6 +96,7 @@ func TestFor(t *testing.T) {
 			{"level", forType[slog.Level](ignore), &schema{Type: "string"}},
 			{"bigint", forType[big.Int](ignore), &schema{Type: "string"}},
 			{"bigint", forType[*big.Int](ignore), &schema{Types: []string{"null", "string"}}},
+			{"int64array", forType[[]int64](ignore), &schema{Types: []string{"null", "array"}, Items: &schema{Type: "integer"}}},
 			{"custom", forType[custom](ignore), &schema{Type: "custom"}},
 			{"intmap", forType[map[string]int](ignore), &schema{
 				Type:                 "object",
@@ -125,7 +126,7 @@ func TestFor(t *testing.T) {
 					Type: "object",
 					Properties: map[string]*schema{
 						"f":      {Type: "integer", Description: "fdesc"},
-						"G":      {Type: "array", Items: &schema{Type: "number"}},
+						"G":      {Types: []string{"null", "array"}, Items: &schema{Type: "number"}},
 						"P":      {Types: []string{"null", "boolean"}, Description: "pdesc"},
 						"PT":     {Types: []string{"null", "string"}},
 						"NoSkip": {Type: "string"},
