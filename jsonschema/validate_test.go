@@ -512,7 +512,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "ExportedPointer",
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -532,7 +532,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "UnExportedPointer",
 			targetType: reflect.TypeOf([]Durian{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -552,7 +552,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "ExportedValue",
 			targetType: reflect.TypeOf([]Fig{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -572,7 +572,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "UnExportedValue",
 			targetType: reflect.TypeOf([]Honeyberry{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
