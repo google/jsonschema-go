@@ -132,6 +132,14 @@ func falseSchema() *Schema {
 	return &Schema{Not: &Schema{}}
 }
 
+// True returns a Schema that validates any JSON value.
+// It is equivalent to the empty schema ({}), which marshals to the JSON literal true.
+func True() *Schema { return &Schema{} }
+
+// False returns a Schema that validates no JSON value.
+// It is equivalent to the schema {"not": {}}, which marshals to the JSON literal false.
+func False() *Schema { return falseSchema() }
+
 // anchorInfo records the subschema to which an anchor refers, and whether
 // the anchor keyword is $anchor or $dynamicAnchor.
 type anchorInfo struct {
