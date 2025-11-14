@@ -504,6 +504,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"id", "name", "extra"},
 				},
 			},
 			validInstance: []Banana{
@@ -525,6 +526,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"id", "name", "extra"},
 				},
 			},
 			validInstance: []Durian{
@@ -546,6 +548,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"id", "name", "extra"},
 				},
 			},
 			validInstance: []Fig{
@@ -567,6 +570,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"id", "name", "extra"},
 				},
 			},
 			validInstance: []Honeyberry{
@@ -587,6 +591,7 @@ func TestStructEmbedding(t *testing.T) {
 				},
 				Required:             []string{"inner_only", "conflict_field"},
 				AdditionalProperties: falseSchema(),
+				PropertyOrder:        []string{"inner_only", "conflict_field"},
 			},
 			validInstance: Outer{Inner: &Inner{InnerOnly: "data"}, Conflict: 123},
 		},

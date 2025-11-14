@@ -10,6 +10,9 @@ import (
 	"math"
 	"regexp"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestGoRoundTrip(t *testing.T) {
@@ -115,6 +118,42 @@ func TestUnmarshalErrors(t *testing.T) {
 			t.Errorf("%s: error %q does not match %q", tt.in, err, tt.want)
 		}
 
+	}
+}
+
+func TestMarshalOrder(t *testing.T) {
+	for _, tt := range []struct {
+		order []string
+		want  string
+	}{
+		{[]string{"A", "B", "C", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"}}}`},
+		{[]string{"A", "C", "B", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"D":{"type":"integer"}}}`},
+		{[]string{"D", "C", "B", "A"},
+			`{"type":"object","properties":{"D":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"A":{"type":"integer"}}}`},
+		{[]string{"A", "B", "C"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"}}}`},
+		{[]string{"A", "B", "C", "D", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"D":{"type":"integer"}}}`},
+	} {
+		s := &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"A": {Type: "integer"},
+				"B": {Type: "integer"},
+				"C": {Type: "integer"},
+				"D": {Type: "integer"},
+			},
+		}
+		s.PropertyOrder = tt.order
+		gotBytes, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if diff := cmp.Diff(tt.want, string(gotBytes), cmpopts.IgnoreUnexported(Schema{})); diff != "" {
+			t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+		}
 	}
 }
 

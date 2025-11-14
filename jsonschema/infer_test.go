@@ -5,6 +5,7 @@
 package jsonschema_test
 
 import (
+	"encoding/json"
 	"log/slog"
 	"math"
 	"math/big"
@@ -132,6 +133,7 @@ func TestFor(t *testing.T) {
 					},
 					Required:             []string{"f", "G", "P", "PT"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"f", "G", "P", "PT", "NoSkip"},
 				},
 			},
 			{
@@ -145,6 +147,7 @@ func TestFor(t *testing.T) {
 					},
 					Required:             []string{"X", "Y"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"X", "Y"},
 				},
 			},
 			{
@@ -163,6 +166,7 @@ func TestFor(t *testing.T) {
 							},
 							Required:             []string{"B"},
 							AdditionalProperties: falseSchema(),
+							PropertyOrder:        []string{"B"},
 						},
 						"B": {
 							Type:        "integer",
@@ -171,6 +175,7 @@ func TestFor(t *testing.T) {
 					},
 					Required:             []string{"A", "B"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"A", "B"},
 				},
 			},
 		}
@@ -205,6 +210,7 @@ func TestFor(t *testing.T) {
 			},
 			Required:             []string{"A"},
 			AdditionalProperties: falseSchema(),
+			PropertyOrder:        []string{"A"},
 		},
 	})
 	t.Run("lax", func(t *testing.T) {
@@ -275,8 +281,80 @@ func TestForType(t *testing.T) {
 		},
 		Required:             []string{"I", "C", "P", "PP", "B", "M1", "PM1", "M2", "PM2"},
 		AdditionalProperties: falseSchema(),
+		PropertyOrder:        []string{"I", "C", "P", "PP", "G", "B", "M1", "PM1", "M2", "PM2"},
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
+		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+	}
+
+	gotBytes, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStr := `{"type":"object","properties":{"I":{"type":"integer"},"C":{"type":"custom"},"P":{"type":["null","custom"]},"PP":{"type":["null","custom"]},"G":{"type":"integer"}` +
+		`,"B":{"type":"boolean"},"M1":{"type":["custom1","custom2"]},"PM1":{"type":["null","custom1","custom2"]},"M2":{"type":["null","custom3","custom4"]},` +
+		`"PM2":{"type":["null","custom3","custom4"]}},"required":["I","C","P","PP","B","M1","PM1","M2","PM2"],"additionalProperties":false}`
+	if diff := cmp.Diff(wantStr, string(gotBytes), cmpopts.IgnoreUnexported(schema{})); diff != "" {
+		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestForTypeWithDifferentOrder(t *testing.T) {
+	// This tests embedded structs with a custom schema in addition to ForType.
+	type schema = jsonschema.Schema
+
+	type E struct {
+		G float64 // promoted into S
+		B int     // hidden by S.B
+	}
+
+	type S struct {
+		I int
+		F func()
+		C custom
+		B bool
+		E
+	}
+
+	opts := &jsonschema.ForOptions{
+		IgnoreInvalidTypes: true,
+		TypeSchemas: map[reflect.Type]*schema{
+			reflect.TypeFor[custom](): {Type: "custom"},
+			reflect.TypeFor[E](): {
+				Type: "object",
+				Properties: map[string]*schema{
+					"G": {Type: "integer"},
+					"B": {Type: "integer"},
+				},
+			},
+		},
+	}
+	got, err := jsonschema.ForType(reflect.TypeOf(S{}), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &schema{
+		Type: "object",
+		Properties: map[string]*schema{
+			"I": {Type: "integer"},
+			"C": {Type: "custom"},
+			"G": {Type: "integer"},
+			"B": {Type: "integer"},
+		},
+		Required:             []string{"I", "C", "B"},
+		AdditionalProperties: falseSchema(),
+		PropertyOrder:        []string{"I", "C", "G", "B"},
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
+		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+	}
+
+	gotBytes, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantStr := `{"type":"object","properties":{"I":{"type":"integer"},"C":{"type":"custom"},"G":{"type":"integer"},"B":{"type":"integer"}},"required":["I","C","B"],"additionalProperties":false}`
+	if diff := cmp.Diff(wantStr, string(gotBytes), cmpopts.IgnoreUnexported(schema{})); diff != "" {
 		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
 	}
 }

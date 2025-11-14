@@ -265,6 +265,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 					skipPath = field.Index
 					for name, prop := range override.Properties {
 						s.Properties[name] = prop.CloneSchemas()
+						s.PropertyOrder = append(s.PropertyOrder, name)
 					}
 				}
 				continue
@@ -319,9 +320,35 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 				fs.Description = tag
 			}
 			s.Properties[info.name] = fs
+
+			s.PropertyOrder = append(s.PropertyOrder, info.name)
+
 			if !info.settings["omitempty"] && !info.settings["omitzero"] {
 				s.Required = append(s.Required, info.name)
 			}
+		}
+
+		// Remove PropertyOrder duplicates, keeping the last occurrence
+		if len(s.PropertyOrder) > 1 {
+			seen := make(map[string]bool)
+			// Create a slice to hold the cleaned order (capacity = current length)
+			cleaned := make([]string, 0, len(s.PropertyOrder))
+
+			// Iterate backwards
+			for i := len(s.PropertyOrder) - 1; i >= 0; i-- {
+				name := s.PropertyOrder[i]
+				if !seen[name] {
+					cleaned = append(cleaned, name)
+					seen[name] = true
+				}
+			}
+
+			// Since we collected them backwards, we need to reverse the result
+			// to restore the correct order.
+			for i, j := 0, len(cleaned)-1; i < j; i, j = i+1, j-1 {
+				cleaned[i], cleaned[j] = cleaned[j], cleaned[i]
+			}
+			s.PropertyOrder = cleaned
 		}
 
 	default:
