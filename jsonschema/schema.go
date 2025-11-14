@@ -125,6 +125,17 @@ type Schema struct {
 
 	// Extra allows for additional keywords beyond those specified.
 	Extra map[string]any `json:"-"`
+
+	// PropertyOrder records the ordering of properties for JSON rendering.
+	//
+	// During [For], PropertyOrder is set to the field order,
+	// if the type used for inference is a struct.
+	//
+	// If PropertyOrder is set, it controls the relative ordering of properties in [Schema.MarshalJSON].
+	// The rendered JSON first lists any properties that appear in the PropertyOrder slice in the order
+	// they appear, followed by any properties that do not appear in the PropertyOrder slice in an
+	// undefined but deterministic order.
+	PropertyOrder []string `json:"-"`
 }
 
 // falseSchema returns a new Schema tree that fails to validate any value.
@@ -212,12 +223,20 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		typ = s.Types
 	}
 	ms := struct {
-		Type any `json:"type,omitempty"`
+		Type       any            `json:"type,omitempty"`
+		Properties json.Marshaler `json:"properties,omitempty"`
 		*schemaWithoutMethods
 	}{
 		Type:                 typ,
 		schemaWithoutMethods: (*schemaWithoutMethods)(s),
 	}
+	if len(s.Properties) > 0 {
+		ms.Properties = orderedProperties{
+			props: s.Properties,
+			order: s.PropertyOrder,
+		}
+	}
+
 	bs, err := marshalStructWithMap(&ms, "Extra")
 	if err != nil {
 		return nil, err
@@ -231,6 +250,72 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		bs = []byte("false")
 	}
 	return bs, nil
+}
+
+// orderedProperties is a helper to marshal the properties map in a specific order.
+type orderedProperties struct {
+	props map[string]*Schema
+	order []string
+}
+
+func (op orderedProperties) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+
+	first := true
+	processed := make(map[string]bool, len(op.props))
+
+	// Helper closure to write "key": value
+	writeEntry := func(key string, val *Schema) error {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+
+		// Marshal the Key
+		keyBytes, err := json.Marshal(key)
+		if err != nil {
+			return err
+		}
+		buf.Write(keyBytes)
+
+		buf.WriteByte(':')
+
+		// Marshal the Value
+		valBytes, err := json.Marshal(val)
+		if err != nil {
+			return err
+		}
+		buf.Write(valBytes)
+		return nil
+	}
+
+	// Write keys explicitly listed in PropertyOrder
+	for _, name := range op.order {
+		if prop, ok := op.props[name]; ok {
+			if err := writeEntry(name, prop); err != nil {
+				return nil, err
+			}
+			processed[name] = true
+		}
+	}
+
+	// Write any remaining keys
+	var remaining []string
+	for name := range op.props {
+		if !processed[name] {
+			remaining = append(remaining, name)
+		}
+	}
+
+	for _, name := range remaining {
+		if err := writeEntry(name, op.props[name]); err != nil {
+			return nil, err
+		}
+	}
+
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 func (s *Schema) UnmarshalJSON(data []byte) error {
