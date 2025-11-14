@@ -31,16 +31,6 @@ func isValidSchemaVersion(version string) bool {
 	return version == "" || version == draft07 || version == draft07Sec || version == draft202012
 }
 
-// isDraft07 checks if the schema version is draft-07
-func isDraft07(version string) bool {
-	return version == draft07 || version == draft07Sec
-}
-
-// isDraft202012 checks if the schema version is draft 2020-12
-func isDraft202012(version string) bool {
-	return version == "" || version == draft202012 // empty defaults to 2020-12
-}
-
 // Validate validates the instance, which must be a JSON value, against the schema.
 // It returns nil if validation is successful or an error if it is not.
 // If the schema type is "object", instance can be a map[string]any or a struct.
@@ -109,6 +99,19 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	}
 
 	schemaInfo := st.rs.resolvedInfos[schema]
+
+	var anns annotations // all the annotations for this call and child calls
+	// $ref: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
+	if schema.Ref != "" {
+		if err := st.validate(instance, schemaInfo.resolvedRef, &anns); err != nil {
+			return err
+		}
+		// https://json-schema.org/draft-07/draft-handrews-json-schema-01#rfc.section.8.3
+		// "All other properties in a "$ref" object MUST be ignored."
+		if st.rs.draft == Draft7 {
+			return nil
+		}
+	}
 
 	// type: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.1.1
 	if schema.Type != "" || schema.Types != nil {
@@ -198,15 +201,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 		if schema.Pattern != "" && !schemaInfo.pattern.MatchString(str) {
 			return fmt.Errorf("pattern: %q does not match regular expression %q", str, schema.Pattern)
-		}
-	}
-
-	var anns annotations // all the annotations for this call and child calls
-
-	// $ref: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
-	if schema.Ref != "" {
-		if err := st.validate(instance, schemaInfo.resolvedRef, &anns); err != nil {
-			return err
 		}
 	}
 
@@ -579,42 +573,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			}
 		}
 
-		// Draft-07 dependencies (combines both property and schema dependencies)
-		if schema.Dependencies != nil {
-			for dprop, dep := range schema.Dependencies {
-				if hasProperty(dprop) {
-					switch v := dep.(type) {
-					case []interface{}:
-						// Array of strings - property dependencies
-						var reqs []string
-						for _, item := range v {
-							if str, ok := item.(string); ok {
-								reqs = append(reqs, str)
-							}
-						}
-						if m := missingProperties(reqs); len(m) > 0 {
-							return fmt.Errorf("dependencies[%q]: missing properties %q", dprop, m)
-						}
-					case map[string]interface{}:
-						// Schema object - schema dependencies
-						// Convert map to Schema and resolve it properly
-						if data, err := json.Marshal(v); err == nil {
-							var depSchema Schema
-							if err := json.Unmarshal(data, &depSchema); err == nil {
-								// Resolve the dependency schema
-								resolved, err := depSchema.Resolve(nil)
-								if err != nil {
-									return fmt.Errorf("dependencies[%q]: failed to resolve schema: %w", dprop, err)
-								}
-								if err := resolved.Validate(instance.Interface()); err != nil {
-									return fmt.Errorf("dependencies[%q]: %w", dprop, err)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
 		if schema.UnevaluatedProperties != nil && !anns.allProperties {
 			// This looks a lot like AdditionalProperties, but depends on in-place keywords like allOf
 			// in addition to sibling keywords.

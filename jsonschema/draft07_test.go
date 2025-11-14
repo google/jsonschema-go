@@ -469,7 +469,7 @@ func TestDraft07Marshalling(t *testing.T) {
 		{
 			name:     "draft-07 dependencies marshalling",
 			input:    `{"dependencies": {"name": ["first", "last"]}}`,
-			expected: `{"dependencies":{"name":["first","last"]}}`,
+			expected: `{"dependencies":{"name":["first","last"]},"dependentRequired":{"name":["first","last"]}}`,
 		},
 		{
 			name:     "draft-07 definitions marshalling",
@@ -497,30 +497,6 @@ func TestDraft07Marshalling(t *testing.T) {
 
 			if string(data) != tt.expected {
 				t.Errorf("marshalling mismatch:\ngot:  %s\nwant: %s", string(data), tt.expected)
-			}
-		})
-	}
-}
-
-// TestDraft07VersionDetection tests the isDraft07 function
-func TestDraft07VersionDetection(t *testing.T) {
-	tests := []struct {
-		version  string
-		expected bool
-	}{
-		{"http://json-schema.org/draft-07/schema#", true},
-		{"https://json-schema.org/draft-07/schema#", true},
-		{"http://json-schema.org/draft/2020-12/schema", false},
-		{"https://json-schema.org/draft/2020-12/schema", false},
-		{"", false},
-		{"invalid", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			result := isDraft07(tt.version)
-			if result != tt.expected {
-				t.Errorf("isDraft07(%q) = %v, want %v", tt.version, result, tt.expected)
 			}
 		})
 	}

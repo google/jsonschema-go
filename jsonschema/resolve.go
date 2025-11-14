@@ -22,19 +22,78 @@ import (
 // (the $ref and $dynamicRef keywords) have been resolved to their referenced Schemas.
 // Call [Schema.Resolve] to obtain a Resolved from a Schema.
 type Resolved struct {
-	root *Schema
+	root  *Schema
+	draft Draft
 	// map from $ids to their schemas
 	resolvedURIs map[string]*Schema
 	// map from schemas to additional info computed during resolution
 	resolvedInfos map[*Schema]*resolvedInfo
 }
 
-func newResolved(s *Schema) *Resolved {
+type Draft int
+
+const (
+	DraftUnknown Draft = iota
+	Draft7
+	Draft2020 // Covers Draft 2019-09 and 2020-12
+)
+
+func newResolved(s *Schema, draftPtr *Draft) *Resolved {
+	var draft Draft
+	if draftPtr != nil && *draftPtr != DraftUnknown {
+		draft = *draftPtr
+	} else {
+		draft = DetectDraft(s)
+	}
+
 	return &Resolved{
 		root:          s,
+		draft:         draft,
 		resolvedURIs:  map[string]*Schema{},
 		resolvedInfos: map[*Schema]*resolvedInfo{},
 	}
+}
+
+// DetectDraft inspects the raw JSON to determine the schema version.
+func DetectDraft(s *Schema) Draft {
+	// 1. Check explicit $schema declaration (The Gold Standard)
+	if s.Schema != "" {
+		if strings.Contains(s.Schema, "draft-07") ||
+			strings.Contains(s.Schema, "draft-06") ||
+			strings.Contains(s.Schema, "draft-04") {
+			return Draft7
+		}
+		if strings.Contains(s.Schema, "2020-12") ||
+			strings.Contains(s.Schema, "2019-09") {
+			return Draft2020
+		}
+	}
+
+	// If $schema is missing, look for structural clues
+	// "$defs" exists -> 2019+
+	if len(s.Defs) > 0 {
+		return Draft2020
+	}
+
+	// "definitions" exists likely Draft 7 or older
+	if len(s.Definitions) > 0 {
+		return Draft7
+	}
+
+	// "dependencies" likely Draft 7
+	// (2020 splits this into dependentRequired/dependentSchemas)
+	if len(s.Dependencies) > 0 {
+		return Draft7
+	}
+
+	// "additionalItems" likely Draft 7
+	// (2020 uses items + prefixItems)
+	if s.AdditionalItems != nil {
+		return Draft7
+	}
+
+	// If no clues are found default to the latest supported version.
+	return Draft2020
 }
 
 // resolvedInfo holds information specific to a schema that is computed by [Schema.Resolve].
@@ -119,6 +178,7 @@ type ResolveOptions struct {
 	//
 	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
 	ValidateDefaults bool
+	Draft            *Draft
 }
 
 // Resolve resolves all references within the schema and performs other tasks that
@@ -185,7 +245,7 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 	if baseURI.Fragment != "" {
 		return nil, fmt.Errorf("base URI %s must not have a fragment", baseURI)
 	}
-	rs := newResolved(s)
+	rs := newResolved(s, r.opts.Draft)
 
 	if err := s.check(rs.resolvedInfos); err != nil {
 		return nil, err
@@ -390,22 +450,28 @@ func resolveURIs(rs *Resolved, baseURI *url.URL) error {
 
 		// ids are scoped to the root.
 		if s.ID != "" {
-			// A non-empty ID establishes a new base.
-			idURI, err := url.Parse(s.ID)
-			if err != nil {
-				return err
+			// draft-7 specific
+			// https://json-schema.org/draft-07/draft-handrews-json-schema-01#rfc.section.8.3
+			// "All other properties in a "$ref" object MUST be ignored."
+			ignore := rs.draft == Draft7 && s.Ref != ""
+			if !ignore {
+				// A non-empty ID establishes a new base.
+				idURI, err := url.Parse(s.ID)
+				if err != nil {
+					return err
+				}
+				if idURI.Fragment != "" {
+					return fmt.Errorf("$id %s must not have a fragment", s.ID)
+				}
+				// The base URI for this schema is its $id resolved against the parent base.
+				info.uri = baseInfo.uri.ResolveReference(idURI)
+				if !info.uri.IsAbs() {
+					return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %q)", s.ID, baseInfo.uri)
+				}
+				rs.resolvedURIs[info.uri.String()] = s
+				base = s // needed for anchors
+				baseInfo = rs.resolvedInfos[base]
 			}
-			if idURI.Fragment != "" {
-				return fmt.Errorf("$id %s must not have a fragment", s.ID)
-			}
-			// The base URI for this schema is its $id resolved against the parent base.
-			info.uri = baseInfo.uri.ResolveReference(idURI)
-			if !info.uri.IsAbs() {
-				return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %q)", s.ID, baseInfo.uri)
-			}
-			rs.resolvedURIs[info.uri.String()] = s
-			base = s // needed for anchors
-			baseInfo = rs.resolvedInfos[base]
 		}
 		info.base = base
 

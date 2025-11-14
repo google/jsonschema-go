@@ -90,7 +90,7 @@ func TestPaths(t *testing.T) {
 		{root.PrefixItems[1], "/prefixItems/1"},
 		{root.PrefixItems[1].Items, "/prefixItems/1/items"},
 	}
-	rs := newResolved(root)
+	rs := newResolved(root, nil)
 	if err := root.checkStructure(rs.resolvedInfos); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestResolveURIs(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			rs := newResolved(root)
+			rs := newResolved(root, nil)
 			if err := root.check(rs.resolvedInfos); err != nil {
 				t.Fatal(err)
 			}

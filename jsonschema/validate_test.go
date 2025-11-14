@@ -78,6 +78,9 @@ func testValidate(t *testing.T, files []string) {
 					}
 					for _, test := range g.Tests {
 						t.Run(test.Description, func(t *testing.T) {
+							if g.Description == "$ref prevents a sibling $id from changing the base uri" {
+								_ = g.Description
+							}
 							err = rs.Validate(test.Data)
 							if err != nil && test.Valid {
 								t.Errorf("wanted success, but failed with: %v", err)
