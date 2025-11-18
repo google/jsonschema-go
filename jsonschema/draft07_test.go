@@ -464,12 +464,12 @@ func TestDraft07Marshalling(t *testing.T) {
 		{
 			name:     "draft-07 items array marshalling",
 			input:    `{"items": [{"type": "string"}, {"type": "number"}]}`,
-			expected: `{"items":[{"type":"string"},{"type":"number"}],"prefixItems":[{"type":"string"},{"type":"number"}]}`,
+			expected: `{"items":[{"type":"string"},{"type":"number"}]}`,
 		},
 		{
 			name:     "draft-07 dependencies marshalling",
 			input:    `{"dependencies": {"name": ["first", "last"]}}`,
-			expected: `{"dependencies":{"name":["first","last"]},"dependentRequired":{"name":["first","last"]}}`,
+			expected: `{"dependencies":{"name":["first","last"]}}`,
 		},
 		{
 			name:     "draft-07 definitions marshalling",

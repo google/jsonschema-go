@@ -139,6 +139,26 @@ func lookupSchemaField(v reflect.Value, name string) reflect.Value {
 		}
 		return v.FieldByName("Types")
 	}
+	if name == "items" {
+		// The "items" keyword refers to the "union type" that is either a schema or a schema.
+		var items reflect.Value
+		if items = v.FieldByName("Items"); items.IsNil() {
+			return reflect.Value{}
+		}
+		if schema := items.Elem().FieldByName("Schema"); !schema.IsNil() {
+			return schema
+		}
+		return items.Elem().FieldByName("Array")
+	}
+	if name == "dependencies" {
+		var items reflect.Value
+		if items = v.FieldByName("Dependencies"); !items.IsValid() {
+			return reflect.Value{}
+		}
+		if schema := items.FieldByName("Schema"); !schema.IsNil() {
+			return schema
+		}
+	}
 	if sf, ok := schemaFieldMap[name]; ok {
 		return v.FieldByIndex(sf.Index)
 	}

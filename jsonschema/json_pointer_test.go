@@ -52,7 +52,7 @@ func TestDereferenceJSONPointer(t *testing.T) {
 func TestDerefernceJSONPointerErrors(t *testing.T) {
 	s := &Schema{
 		Type:     "t",
-		Items:    &Schema{},
+		Items:    &SchemaOrSchemaArray{Schema: &Schema{}},
 		Required: []string{"a"},
 	}
 	for _, tt := range []struct {

@@ -23,77 +23,43 @@ import (
 // Call [Schema.Resolve] to obtain a Resolved from a Schema.
 type Resolved struct {
 	root  *Schema
-	draft Draft
+	draft draft
 	// map from $ids to their schemas
 	resolvedURIs map[string]*Schema
 	// map from schemas to additional info computed during resolution
 	resolvedInfos map[*Schema]*resolvedInfo
 }
 
-type Draft int
+type draft int
 
 const (
-	DraftUnknown Draft = iota
-	Draft7
-	Draft2020 // Covers Draft 2019-09 and 2020-12
+	draft7 = iota
+	draft2020
 )
 
-func newResolved(s *Schema, draftPtr *Draft) *Resolved {
-	var draft Draft
-	if draftPtr != nil && *draftPtr != DraftUnknown {
-		draft = *draftPtr
-	} else {
-		draft = DetectDraft(s)
-	}
-
+func newResolved(s *Schema) *Resolved {
 	return &Resolved{
 		root:          s,
-		draft:         draft,
+		draft:         detectDraft(s),
 		resolvedURIs:  map[string]*Schema{},
 		resolvedInfos: map[*Schema]*resolvedInfo{},
 	}
 }
 
 // DetectDraft inspects the raw JSON to determine the schema version.
-func DetectDraft(s *Schema) Draft {
+func detectDraft(s *Schema) draft {
 	// 1. Check explicit $schema declaration (The Gold Standard)
 	if s.Schema != "" {
-		if strings.Contains(s.Schema, "draft-07") ||
-			strings.Contains(s.Schema, "draft-06") ||
-			strings.Contains(s.Schema, "draft-04") {
-			return Draft7
+		if strings.Contains(s.Schema, "draft-07") {
+			return draft7
 		}
-		if strings.Contains(s.Schema, "2020-12") ||
-			strings.Contains(s.Schema, "2019-09") {
-			return Draft2020
+		if strings.Contains(s.Schema, "2020-12") {
+			return draft2020
 		}
-	}
-
-	// If $schema is missing, look for structural clues
-	// "$defs" exists -> 2019+
-	if len(s.Defs) > 0 {
-		return Draft2020
-	}
-
-	// "definitions" exists likely Draft 7 or older
-	if len(s.Definitions) > 0 {
-		return Draft7
-	}
-
-	// "dependencies" likely Draft 7
-	// (2020 splits this into dependentRequired/dependentSchemas)
-	if len(s.Dependencies) > 0 {
-		return Draft7
-	}
-
-	// "additionalItems" likely Draft 7
-	// (2020 uses items + prefixItems)
-	if s.AdditionalItems != nil {
-		return Draft7
 	}
 
 	// If no clues are found default to the latest supported version.
-	return Draft2020
+	return draft2020
 }
 
 // resolvedInfo holds information specific to a schema that is computed by [Schema.Resolve].
@@ -178,7 +144,6 @@ type ResolveOptions struct {
 	//
 	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
 	ValidateDefaults bool
-	Draft            *Draft
 }
 
 // Resolve resolves all references within the schema and performs other tasks that
@@ -245,7 +210,7 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 	if baseURI.Fragment != "" {
 		return nil, fmt.Errorf("base URI %s must not have a fragment", baseURI)
 	}
-	rs := newResolved(s, r.opts.Draft)
+	rs := newResolved(s)
 
 	if err := s.check(rs.resolvedInfos); err != nil {
 		return nil, err
@@ -335,6 +300,52 @@ func (root *Schema) checkStructure(infos map[*Schema]*resolvedInfo) error {
 					key := escapeJSONPointerSegment(iter.Key().String())
 					if err := check(iter.Value(), fmt.Appendf(path, "/%s/%s", info.jsonName, key)); err != nil {
 						return err
+					}
+				}
+
+			case mapSchemaOrStringArrayType:
+				iter := fv.MapRange()
+				for iter.Next() {
+					val := iter.Value()
+					if val.Kind() == reflect.Ptr {
+						if val.IsNil() {
+							break // or return nil
+						}
+						val = val.Elem()
+					}
+
+					singleSchemaField := val.FieldByName("Schema")
+					if singleSchemaField.IsValid() && !singleSchemaField.IsNil() {
+						if err := check(singleSchemaField, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
+							return err
+						}
+					}
+				}
+
+			case schemaOrSchemaArrayType:
+				val := fv
+				if val.Kind() == reflect.Ptr {
+					if val.IsNil() {
+						break // or return nil
+					}
+					val = val.Elem()
+				}
+
+				singleSchemaField := val.FieldByName("Schema")
+				if singleSchemaField.IsValid() && !singleSchemaField.IsNil() {
+					// Pass the same path logic as 'schemaType' case
+					if err := check(singleSchemaField, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
+						return err
+					}
+				}
+
+				sliceSchemaField := val.FieldByName("Array")
+				if sliceSchemaField.IsValid() && !sliceSchemaField.IsNil() {
+					// Iterate exactly like 'schemaSliceType' case
+					for i := 0; i < sliceSchemaField.Len(); i++ {
+						if err := check(sliceSchemaField.Index(i), fmt.Appendf(path, "/%s/%d", info.jsonName, i)); err != nil {
+							return err
+						}
 					}
 				}
 			}
@@ -443,6 +454,21 @@ func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo)
 //	allOf/2        http://a.com/root.json (inherited from parent)
 //	allOf/2/not    http://a.com/root.json (inherited from parent)
 func resolveURIs(rs *Resolved, baseURI *url.URL) error {
+	// Anchors and dynamic anchors are URI fragments that are scoped to their base.
+	// We treat them as keys in a map stored within the schema.
+	setAnchor := func(s *Schema, baseInfo *resolvedInfo, anchor string, dynamic bool) error {
+		if anchor != "" {
+			if _, ok := baseInfo.anchors[anchor]; ok {
+				return fmt.Errorf("duplicate anchor %q in %s", anchor, baseInfo.uri)
+			}
+			if baseInfo.anchors == nil {
+				baseInfo.anchors = map[string]anchorInfo{}
+			}
+			baseInfo.anchors[anchor] = anchorInfo{s, dynamic}
+		}
+		return nil
+	}
+
 	var resolve func(s, base *Schema) error
 	resolve = func(s, base *Schema) error {
 		info := rs.resolvedInfos[s]
@@ -453,45 +479,36 @@ func resolveURIs(rs *Resolved, baseURI *url.URL) error {
 			// draft-7 specific
 			// https://json-schema.org/draft-07/draft-handrews-json-schema-01#rfc.section.8.3
 			// "All other properties in a "$ref" object MUST be ignored."
-			ignore := rs.draft == Draft7 && s.Ref != ""
+			ignore := rs.draft == draft7 && s.Ref != ""
 			if !ignore {
 				// A non-empty ID establishes a new base.
 				idURI, err := url.Parse(s.ID)
 				if err != nil {
 					return err
 				}
-				if idURI.Fragment != "" {
+				if rs.draft == draft2020 && idURI.Fragment != "" {
 					return fmt.Errorf("$id %s must not have a fragment", s.ID)
 				}
-				// The base URI for this schema is its $id resolved against the parent base.
-				info.uri = baseInfo.uri.ResolveReference(idURI)
-				if !info.uri.IsAbs() {
-					return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %q)", s.ID, baseInfo.uri)
+				if rs.draft == draft7 && idURI.Fragment != "" {
+					anchorName := strings.TrimPrefix(s.ID, "#")
+					setAnchor(s, baseInfo, anchorName, false)
+				} else {
+					// The base URI for this schema is its $id resolved against the parent base.
+					info.uri = baseInfo.uri.ResolveReference(idURI)
+					if !info.uri.IsAbs() {
+						return fmt.Errorf("$id %s does not resolve to an absolute URI (base is %q)", s.ID, baseInfo.uri)
+					}
+					rs.resolvedURIs[info.uri.String()] = s
+					base = s // needed for anchors
+					baseInfo = rs.resolvedInfos[base]
 				}
-				rs.resolvedURIs[info.uri.String()] = s
-				base = s // needed for anchors
-				baseInfo = rs.resolvedInfos[base]
 			}
 		}
 		info.base = base
-
-		// Anchors and dynamic anchors are URI fragments that are scoped to their base.
-		// We treat them as keys in a map stored within the schema.
-		setAnchor := func(anchor string, dynamic bool) error {
-			if anchor != "" {
-				if _, ok := baseInfo.anchors[anchor]; ok {
-					return fmt.Errorf("duplicate anchor %q in %s", anchor, baseInfo.uri)
-				}
-				if baseInfo.anchors == nil {
-					baseInfo.anchors = map[string]anchorInfo{}
-				}
-				baseInfo.anchors[anchor] = anchorInfo{s, dynamic}
-			}
-			return nil
+		if rs.draft == draft2020 {
+			setAnchor(s, baseInfo, s.Anchor, false)
+			setAnchor(s, baseInfo, s.DynamicAnchor, true)
 		}
-
-		setAnchor(s.Anchor, false)
-		setAnchor(s.DynamicAnchor, true)
 
 		for c := range s.children() {
 			if err := resolve(c, base); err != nil {
@@ -574,6 +591,10 @@ func (r *resolver) resolveRef(rs *Resolved, s *Schema, ref string) (_ *Schema, d
 			ls, err := r.opts.Loader(fraglessRefURI)
 			if err != nil {
 				return nil, "", fmt.Errorf("loading %s: %w", fraglessRefURI, err)
+			}
+			// Check if referenced schema has $schema defined. If not it should inherit the resolved
+			if ls.Schema == "" {
+				ls.Schema = s.Schema
 			}
 			lrs, err := r.resolve(ls, fraglessRefURI)
 			if err != nil {

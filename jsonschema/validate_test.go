@@ -44,7 +44,7 @@ func TestValidateDraft2020_12(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no files")
 	}
-	testValidate(t, files)
+	testValidate(t, files, "")
 }
 
 func TestValidateDraft7(t *testing.T) {
@@ -55,10 +55,10 @@ func TestValidateDraft7(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no files")
 	}
-	testValidate(t, files)
+	testValidate(t, files, "https://json-schema.org/draft-07/schema#")
 }
 
-func testValidate(t *testing.T, files []string) {
+func testValidate(t *testing.T, files []string, draft string) {
 	for _, file := range files {
 		base := filepath.Base(file)
 		t.Run(base, func(t *testing.T) {
@@ -72,15 +72,15 @@ func testValidate(t *testing.T, files []string) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
+					if g.Schema.Schema == "" {
+						g.Schema.Schema = draft
+					}
 					rs, err := g.Schema.Resolve(&ResolveOptions{Loader: loadRemote})
 					if err != nil {
 						t.Fatal(err)
 					}
 					for _, test := range g.Tests {
 						t.Run(test.Description, func(t *testing.T) {
-							if g.Description == "$ref prevents a sibling $id from changing the base uri" {
-								_ = g.Description
-							}
 							err = rs.Validate(test.Data)
 							if err != nil && test.Valid {
 								t.Errorf("wanted success, but failed with: %v", err)
@@ -513,7 +513,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &Schema{
+				Items: &SchemaOrSchemaArray{Schema: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -522,7 +522,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
+				}},
 			},
 			validInstance: []Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
@@ -534,7 +534,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Durian{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &Schema{
+				Items: &SchemaOrSchemaArray{Schema: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -543,7 +543,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
+				}},
 			},
 			validInstance: []Durian{
 				{cranberry: &cranberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
@@ -555,7 +555,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Fig{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &Schema{
+				Items: &SchemaOrSchemaArray{Schema: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -564,7 +564,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
+				}},
 			},
 			validInstance: []Fig{
 				{Elderberry: Elderberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
@@ -576,7 +576,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Honeyberry{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &Schema{
+				Items: &SchemaOrSchemaArray{Schema: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -585,7 +585,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
+				}},
 			},
 			validInstance: []Honeyberry{
 				{grape: grape{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},

@@ -25,11 +25,11 @@ func TestSchemaStructure(t *testing.T) {
 	}
 
 	dag := &Schema{Type: "number"}
-	dag = &Schema{Items: dag, Contains: dag}
+	dag = &Schema{Items: &SchemaOrSchemaArray{Schema: dag}, Contains: dag}
 	check(dag, "do not form a tree")
 
 	tree := &Schema{Type: "number"}
-	tree.Items = tree
+	tree.Items = &SchemaOrSchemaArray{Schema: tree}
 	check(tree, "do not form a tree")
 
 	sliceNil := &Schema{PrefixItems: []*Schema{nil}}
@@ -70,7 +70,7 @@ func TestPaths(t *testing.T) {
 	// This test also verifies that Schema.all visits maps in sorted order.
 	root := &Schema{
 		Type:        "string",
-		PrefixItems: []*Schema{{Type: "int"}, {Items: &Schema{Type: "null"}}},
+		PrefixItems: []*Schema{{Type: "int"}, {Items: &SchemaOrSchemaArray{Schema: &Schema{Type: "null"}}}},
 		Contains: &Schema{Properties: map[string]*Schema{
 			"~1": {Type: "boolean"},
 			"p":  {},
@@ -88,9 +88,9 @@ func TestPaths(t *testing.T) {
 		{root.Contains.Properties["~1"], "/contains/properties/~01"},
 		{root.PrefixItems[0], "/prefixItems/0"},
 		{root.PrefixItems[1], "/prefixItems/1"},
-		{root.PrefixItems[1].Items, "/prefixItems/1/items"},
+		{root.PrefixItems[1].Items.Schema, "/prefixItems/1/items"},
 	}
-	rs := newResolved(root, nil)
+	rs := newResolved(root)
 	if err := root.checkStructure(rs.resolvedInfos); err != nil {
 		t.Fatal(err)
 	}
@@ -109,22 +109,22 @@ func TestResolveURIs(t *testing.T) {
 		t.Run(baseURI, func(t *testing.T) {
 			root := &Schema{
 				ID: "http://b.com",
-				Items: &Schema{
+				Items: &SchemaOrSchemaArray{Schema: &Schema{
 					ID: "/foo.json",
-				},
+				}},
 				Contains: &Schema{
 					ID:            "/bar.json",
 					Anchor:        "a",
 					DynamicAnchor: "da",
-					Items: &Schema{
+					Items: &SchemaOrSchemaArray{Schema: &Schema{
 						Anchor: "b",
-						Items: &Schema{
+						Items: &SchemaOrSchemaArray{Schema: &Schema{
 							// An ID shouldn't be a query param, but this tests
 							// resolving an ID with its parent.
 							ID:     "?items",
 							Anchor: "c",
-						},
-					},
+						}},
+					}},
 				},
 			}
 			base, err := url.Parse(baseURI)
@@ -132,7 +132,7 @@ func TestResolveURIs(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			rs := newResolved(root, nil)
+			rs := newResolved(root)
 			if err := root.check(rs.resolvedInfos); err != nil {
 				t.Fatal(err)
 			}
@@ -142,9 +142,9 @@ func TestResolveURIs(t *testing.T) {
 
 			wantIDs := map[string]*Schema{
 				baseURI:                       root,
-				"http://b.com/foo.json":       root.Items,
+				"http://b.com/foo.json":       root.Items.Schema,
 				"http://b.com/bar.json":       root.Contains,
-				"http://b.com/bar.json?items": root.Contains.Items.Items,
+				"http://b.com/bar.json?items": root.Contains.Items.Schema.Items.Schema,
 			}
 			if baseURI != root.ID {
 				wantIDs[root.ID] = root
@@ -153,10 +153,10 @@ func TestResolveURIs(t *testing.T) {
 				root.Contains: {
 					"a":  anchorInfo{root.Contains, false},
 					"da": anchorInfo{root.Contains, true},
-					"b":  anchorInfo{root.Contains.Items, false},
+					"b":  anchorInfo{root.Contains.Items.Schema, false},
 				},
-				root.Contains.Items.Items: {
-					"c": anchorInfo{root.Contains.Items.Items, false},
+				root.Contains.Items.Schema.Items.Schema: {
+					"c": anchorInfo{root.Contains.Items.Schema.Items.Schema, false},
 				},
 			}
 

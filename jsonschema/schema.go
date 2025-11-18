@@ -15,13 +15,12 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"strconv"
-	"strings"
 )
 
 // A Schema is a JSON schema object.
 // It supports both draft-07 and the 2020-12 draft specifications:
-//   - Draft-07: http://json-schema.org/draft-07/schema#
+//   - Draft-07: https://json-schema.org/draft-07/draft-handrews-json-schema-01
+//     and https://json-schema.org/draft-07/draft-handrews-json-schema-validation-01
 //   - Draft 2020-12: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-01
 //     and https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01
 //
@@ -43,16 +42,15 @@ import (
 // requires equality to some slice element, so it vacuously rejects every instance.
 type Schema struct {
 	// core
-	ID      string             `json:"$id,omitempty"`
-	Schema  string             `json:"$schema,omitempty"`
-	Ref     string             `json:"$ref,omitempty"`
-	Comment string             `json:"$comment,omitempty"`
-	Defs    map[string]*Schema `json:"$defs,omitempty"`
-	// definitions is deprecated but still allowed. It is a synonym for $defs.
+	ID          string             `json:"$id,omitempty"`
+	Schema      string             `json:"$schema,omitempty"`
+	Ref         string             `json:"$ref,omitempty"`
+	Comment     string             `json:"$comment,omitempty"`
+	Defs        map[string]*Schema `json:"$defs,omitempty"`
 	Definitions map[string]*Schema `json:"definitions,omitempty"`
 
 	// store dependencies value to use when resolving draft
-	Dependencies map[string]json.RawMessage `json:"dependencies,omitempty"`
+	Dependencies map[string]SchemaOrStringArray `json:"dependencies,omitempty"`
 
 	Anchor        string          `json:"$anchor,omitempty"`
 	DynamicAnchor string          `json:"$dynamicAnchor,omitempty"`
@@ -85,16 +83,16 @@ type Schema struct {
 	Pattern          string   `json:"pattern,omitempty"`
 
 	// arrays
-	PrefixItems      []*Schema `json:"prefixItems,omitempty"`
-	Items            *Schema   `json:"items,omitempty"`
-	MinItems         *int      `json:"minItems,omitempty"`
-	MaxItems         *int      `json:"maxItems,omitempty"`
-	AdditionalItems  *Schema   `json:"additionalItems,omitempty"`
-	UniqueItems      bool      `json:"uniqueItems,omitempty"`
-	Contains         *Schema   `json:"contains,omitempty"`
-	MinContains      *int      `json:"minContains,omitempty"` // *int, not int: default is 1, not 0
-	MaxContains      *int      `json:"maxContains,omitempty"`
-	UnevaluatedItems *Schema   `json:"unevaluatedItems,omitempty"`
+	PrefixItems      []*Schema            `json:"prefixItems,omitempty"`
+	Items            *SchemaOrSchemaArray `json:"items,omitempty"`
+	MinItems         *int                 `json:"minItems,omitempty"`
+	MaxItems         *int                 `json:"maxItems,omitempty"`
+	AdditionalItems  *Schema              `json:"additionalItems,omitempty"`
+	UniqueItems      bool                 `json:"uniqueItems,omitempty"`
+	Contains         *Schema              `json:"contains,omitempty"`
+	MinContains      *int                 `json:"minContains,omitempty"` // *int, not int: default is 1, not 0
+	MaxContains      *int                 `json:"maxContains,omitempty"`
+	UnevaluatedItems *Schema              `json:"unevaluatedItems,omitempty"`
 
 	// objects
 	MinProperties         *int                `json:"minProperties,omitempty"`
@@ -144,6 +142,66 @@ type anchorInfo struct {
 	dynamic bool
 }
 
+// SchemaOrSchemaArray is a generic container that handles JSON fields
+// which can be a single value of T or an array of T.
+type SchemaOrSchemaArray struct {
+	Schema *Schema
+	Array  []*Schema
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (s *SchemaOrSchemaArray) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	// If the JSON starts with '[', unmarshal as a slice
+	if data[0] == '[' {
+		return json.Unmarshal(data, &s.Array)
+	}
+	// Otherwise, unmarshal as a single instance
+	return json.Unmarshal(data, &s.Schema)
+}
+
+// MarshalJSON implements the json.Marshaler interface (to go back to JSON).
+func (s SchemaOrSchemaArray) MarshalJSON() ([]byte, error) {
+	if s.Array != nil {
+		return json.Marshal(s.Array)
+	}
+	return json.Marshal(&s.Schema)
+}
+
+// SchemaOrStringArray is a special container for the 'dependencies' keyword.
+// It holds EITHER a Schema pointer OR a slice of strings.
+type SchemaOrStringArray struct {
+	Schema *Schema
+	Array  []string
+}
+
+// UnmarshalJSON implements custom parsing logic.
+func (s *SchemaOrStringArray) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+
+	if data[0] == '[' {
+		return json.Unmarshal(data, &s.Array)
+	}
+
+	// Otherwise, it is a Schema object.
+	s.Schema = new(Schema) // Allocate memory for the schema
+	return json.Unmarshal(data, s.Schema)
+}
+
+// MarshalJSON allows you to convert the struct back to valid JSON.
+func (s SchemaOrStringArray) MarshalJSON() ([]byte, error) {
+	// If Array is populated, marshal it as a JSON array
+	if s.Array != nil {
+		return json.Marshal(s.Array)
+	}
+	// Otherwise, marshal the Schema object
+	return json.Marshal(s.Schema)
+}
+
 // String returns a short description of the schema.
 func (s *Schema) String() string {
 	if s.ID != "" {
@@ -186,6 +244,55 @@ func (s *Schema) CloneSchemas() *Schema {
 				m[k] = ss.CloneSchemas()
 			}
 			fv.Set(reflect.ValueOf(m))
+
+		case mapSchemaOrStringArrayType:
+			original := fv.Interface().(map[string]SchemaOrStringArray)
+			// Create a  of the struct wrapper.
+			if original != nil {
+				cloneMap := make(map[string]SchemaOrStringArray, len(original))
+				for key, val := range original {
+					clone := val
+					// Handle the Single Schema case (if present)
+					// "items": { ... }
+					if clone.Schema != nil {
+						clone.Schema = clone.Schema.CloneSchemas()
+					}
+
+					// Handle the Array/Tuple case (if present)
+					// "items": [ { ... }, { ... } ]
+					if clone.Array != nil {
+						// Clone the slice header
+						clone.Array = slices.Clone(clone.Array)
+					}
+					cloneMap[key] = clone
+				}
+				fv.Set(reflect.ValueOf(cloneMap))
+			}
+
+		case schemaOrSchemaArrayType:
+			original := fv.Interface().(*SchemaOrSchemaArray)
+			if original != nil {
+				// Create a clone of the struct wrapper.
+				clone := *original
+
+				// Handle the Single Schema case (if present)
+				// "items": { ... }
+				if clone.Schema != nil {
+					clone.Schema = clone.Schema.CloneSchemas()
+				}
+
+				// Handle the Array/Tuple case (if present)
+				// "items": [ { ... }, { ... } ]
+				if clone.Array != nil {
+					// Clone the slice header
+					clone.Array = slices.Clone(clone.Array)
+					// Deep clone every schema inside the slice
+					for i, s := range clone.Array {
+						clone.Array[i] = s.CloneSchemas()
+					}
+				}
+				fv.Set(reflect.ValueOf(&clone))
+			}
 		}
 	}
 	return &s2
@@ -216,23 +323,11 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 		typ = s.Types
 	}
 
-	// For draft-07 compatibility: if we only have PrefixItems and no Items,
-	// marshal PrefixItems as "items" array, otherwise marshal Items as single schema
-	var items any
-	if len(s.PrefixItems) > 0 && s.Items == nil {
-		// This looks like a draft-07 items array converted to prefixItems
-		items = s.PrefixItems
-	} else if s.Items != nil {
-		items = s.Items
-	}
-
 	ms := struct {
-		Type  any `json:"type,omitempty"`
-		Items any `json:"items,omitempty"`
+		Type any `json:"type,omitempty"`
 		*schemaWithoutMethods
 	}{
 		Type:                 typ,
-		Items:                items,
 		schemaWithoutMethods: (*schemaWithoutMethods)(s),
 	}
 	bs, err := marshalStructWithMap(&ms, "Extra")
@@ -266,7 +361,6 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 
 	ms := struct {
 		Type          json.RawMessage `json:"type,omitempty"`
-		Items         json.RawMessage `json:"items,omitempty"`
 		Const         json.RawMessage `json:"const,omitempty"`
 		MinLength     *integer        `json:"minLength,omitempty"`
 		MaxLength     *integer        `json:"maxLength,omitempty"`
@@ -332,119 +426,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	set(&s.MinContains, ms.MinContains)
 	set(&s.MaxContains, ms.MaxContains)
 
-	if err = s.normalizeDraft7(ms.Items); err != nil {
-		return fmt.Errorf("error converting draft 7 fields to unified schema: %w", err)
-	}
-
 	return nil
-}
-
-func (s *Schema) normalizeDraft7(items json.RawMessage) error {
-	var err error
-	// Handle "items" field: can be either a schema or an array of schemas (draft-07)
-	if len(items) > 0 {
-		switch items[0] {
-		case '{':
-			// Single schema object
-			err = json.Unmarshal(items, &s.Items)
-		case '[':
-			// Array of schemas (draft-07 tuple validation)
-			// For draft-07, convert items array to prefixItems for compatibility
-			err = json.Unmarshal(items, &s.PrefixItems)
-		case 't', 'f':
-			// Boolean schema
-			var boolSchema bool
-			if err = json.Unmarshal(items, &boolSchema); err == nil {
-				if boolSchema {
-					s.Items = &Schema{}
-				} else {
-					s.Items = falseSchema()
-				}
-			}
-		default:
-			err = fmt.Errorf(`invalid value for "items": %q`, items)
-		}
-		if err != nil {
-			return err
-		}
-	} else if s.AdditionalItems != nil {
-		// In Draft 7, if additionalItems is present but items is missing,
-		// items defaults to empty schema (allowing everything before the additional ones).
-		s.Items = &Schema{}
-	}
-	if s.Ref != "" {
-		s.Ref = migrateRefPath(s.Ref)
-	}
-
-	// separate draft-7 dependecies into DependentRequired and DependentSchemas
-	for prop, rawValue := range s.Dependencies {
-		var propDeps []string
-		if err := json.Unmarshal(rawValue, &propDeps); err == nil {
-			if s.DependentRequired == nil {
-				s.DependentRequired = make(map[string][]string)
-			}
-			s.DependentRequired[prop] = propDeps
-			continue
-		}
-
-		var schemaDep Schema
-		// recursively call the UnmarshalJSON method for the Schema type
-		if err := json.Unmarshal(rawValue, &schemaDep); err == nil {
-			if s.DependentSchemas == nil {
-				s.DependentSchemas = make(map[string]*Schema)
-			}
-			s.DependentSchemas[prop] = &schemaDep
-			continue
-		}
-
-		// Error handling if the dependency value is neither a string array nor a valid schema
-		return fmt.Errorf("property dependency '%s' is neither a string array nor a valid schema object", prop)
-	}
-
-	if strings.Contains(s.ID, "#") {
-		// This is a Draft 7/2019 behavior: use $id with fragment as an anchor
-		// anchor did not exist in draft 7, id was used for base uri and document navigation
-		// https://json-schema.org/draft-07/draft-handrews-json-schema-01#id-keyword
-
-		// Strip the '#' to get the anchor name
-		anchorName := strings.TrimPrefix(s.ID, "#")
-
-		// Assign the name to the new $anchor field
-		s.Anchor = anchorName
-
-		// Crucially, delete $id from the raw map so the final UnmarshalJSON
-		// doesn't process the invalid fragmented $id value.
-		s.ID = ""
-	}
-	return nil
-}
-
-// migrateRefPath safely renames 'items' to 'prefixItems' when used in a tuple context.
-// It converts "#/items/0" -> "#/prefixItems/0"
-// It leaves "#/properties/items" -> "#/properties/items"
-func migrateRefPath(ref string) string {
-	// If it doesn't contain items, skip the processing
-	if !strings.Contains(ref, "items") {
-		return ref
-	}
-
-	parts := strings.Split(ref, "/")
-
-	for i, part := range parts {
-		// Look for the segment "items"
-		if part == "items" {
-			// Draft 7: items: [ {A}, {B} ] -> #/items/0
-			// Draft 2020: prefixItems: [ {A}, {B} ] -> #/prefixItems/0
-			// replace if the next part exists and is int
-			if i+1 < len(parts) {
-				if _, err := strconv.Atoi(parts[i+1]); err == nil {
-					parts[i] = "prefixItems"
-				}
-			}
-		}
-	}
-
-	return strings.Join(parts, "/")
 }
 
 type integer int32 // for the integer-valued fields of Schema
@@ -517,6 +499,37 @@ func (s *Schema) everyChild(f func(*Schema) bool) bool {
 					return false
 				}
 			}
+
+		case mapSchemaOrStringArrayType:
+			val := fv.Interface().(map[string]SchemaOrStringArray)
+			// Handle the Single Schema case ("items": { ... })
+			for _, c := range val {
+				if c.Schema != nil {
+					if !f(c.Schema) {
+						return false
+					}
+				}
+			}
+
+		case schemaOrSchemaArrayType:
+			val := fv.Interface().(*SchemaOrSchemaArray)
+			if val != nil {
+				// Handle the Single Schema case ("items": { ... })
+				if val.Schema != nil {
+					if !f(val.Schema) {
+						return false
+					}
+				}
+
+				// Handle the Slice case ("items": [ { ... }, { ... } ])
+				// Ranging over a nil slice is safe in Go (it just skips the loop),
+				// so we don't strictly need to check if val.Schemas != nil first.
+				for _, c := range val.Array {
+					if !f(c) {
+						return false
+					}
+				}
+			}
 		}
 	}
 
@@ -534,9 +547,11 @@ func (s *Schema) children() iter.Seq[*Schema] {
 }
 
 var (
-	schemaType      = reflect.TypeFor[*Schema]()
-	schemaSliceType = reflect.TypeFor[[]*Schema]()
-	schemaMapType   = reflect.TypeFor[map[string]*Schema]()
+	schemaType                 = reflect.TypeFor[*Schema]()
+	schemaSliceType            = reflect.TypeFor[[]*Schema]()
+	schemaMapType              = reflect.TypeFor[map[string]*Schema]()
+	mapSchemaOrStringArrayType = reflect.TypeFor[map[string]SchemaOrStringArray]()
+	schemaOrSchemaArrayType    = reflect.TypeFor[*SchemaOrSchemaArray]()
 )
 
 type structFieldInfo struct {
