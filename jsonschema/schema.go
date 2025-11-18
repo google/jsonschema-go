@@ -162,7 +162,7 @@ func (s *SchemaOrSchemaArray) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &s.Schema)
 }
 
-// MarshalJSON implements the json.Marshaler interface (to go back to JSON).
+// MarshalJSON implements the json.Marshaler interface.
 func (s SchemaOrSchemaArray) MarshalJSON() ([]byte, error) {
 	if s.Array != nil {
 		return json.Marshal(s.Array)
@@ -177,7 +177,7 @@ type SchemaOrStringArray struct {
 	Array  []string
 }
 
-// UnmarshalJSON implements custom parsing logic.
+// UnmarshalJSON implements the json.Unmarshaler interface.
 func (s *SchemaOrStringArray) UnmarshalJSON(data []byte) error {
 	if len(data) == 0 || string(data) == "null" {
 		return nil
@@ -192,7 +192,7 @@ func (s *SchemaOrStringArray) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, s.Schema)
 }
 
-// MarshalJSON allows you to convert the struct back to valid JSON.
+// MarshalJSON implements the json.Marshaler interface.
 func (s SchemaOrStringArray) MarshalJSON() ([]byte, error) {
 	// If Array is populated, marshal it as a JSON array
 	if s.Array != nil {
@@ -522,8 +522,6 @@ func (s *Schema) everyChild(f func(*Schema) bool) bool {
 				}
 
 				// Handle the Slice case ("items": [ { ... }, { ... } ])
-				// Ranging over a nil slice is safe in Go (it just skips the loop),
-				// so we don't strictly need to check if val.Schemas != nil first.
 				for _, c := range val.Array {
 					if !f(c) {
 						return false

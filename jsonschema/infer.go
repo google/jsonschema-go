@@ -205,10 +205,13 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 	case reflect.Slice, reflect.Array:
 		s.Type = "array"
 		itemsSchema, err := forType(t.Elem(), seen, ignore, schemas)
-		s.Items = &SchemaOrSchemaArray{Schema: itemsSchema}
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
+		if itemsSchema == nil {
+			return nil, nil
+		}
+		s.Items = &SchemaOrSchemaArray{Schema: itemsSchema}
 		if ignore && s.Items.Schema == nil {
 			// Ignore if the element type is invalid.
 			return nil, nil

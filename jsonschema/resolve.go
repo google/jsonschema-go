@@ -46,9 +46,9 @@ func newResolved(s *Schema) *Resolved {
 	}
 }
 
-// DetectDraft inspects the raw JSON to determine the schema version.
+// detectDraft inspects the raw JSON to determine the schema version.
 func detectDraft(s *Schema) draft {
-	// 1. Check explicit $schema declaration (The Gold Standard)
+	// Check explicit $schema declaration
 	if s.Schema != "" {
 		if strings.Contains(s.Schema, "draft-07") {
 			return draft7
@@ -490,6 +490,8 @@ func resolveURIs(rs *Resolved, baseURI *url.URL) error {
 					return fmt.Errorf("$id %s must not have a fragment", s.ID)
 				}
 				if rs.draft == draft7 && idURI.Fragment != "" {
+					// anchor did not exist in draft 7, id was used for base uri and document navigation
+					// https://json-schema.org/draft-07/draft-handrews-json-schema-01#id-keyword
 					anchorName := strings.TrimPrefix(s.ID, "#")
 					setAnchor(s, baseInfo, anchorName, false)
 				} else {
