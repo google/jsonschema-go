@@ -302,52 +302,6 @@ func (root *Schema) checkStructure(infos map[*Schema]*resolvedInfo) error {
 						return err
 					}
 				}
-
-			case mapSchemaOrStringArrayType:
-				iter := fv.MapRange()
-				for iter.Next() {
-					val := iter.Value()
-					if val.Kind() == reflect.Ptr {
-						if val.IsNil() {
-							break // or return nil
-						}
-						val = val.Elem()
-					}
-
-					singleSchemaField := val.FieldByName("Schema")
-					if singleSchemaField.IsValid() && !singleSchemaField.IsNil() {
-						if err := check(singleSchemaField, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
-							return err
-						}
-					}
-				}
-
-			case schemaOrSchemaArrayType:
-				val := fv
-				if val.Kind() == reflect.Ptr {
-					if val.IsNil() {
-						break // or return nil
-					}
-					val = val.Elem()
-				}
-
-				singleSchemaField := val.FieldByName("Schema")
-				if singleSchemaField.IsValid() && !singleSchemaField.IsNil() {
-					// Pass the same path logic as 'schemaType' case
-					if err := check(singleSchemaField, fmt.Appendf(path, "/%s", info.jsonName)); err != nil {
-						return err
-					}
-				}
-
-				sliceSchemaField := val.FieldByName("Array")
-				if sliceSchemaField.IsValid() && !sliceSchemaField.IsNil() {
-					// Iterate exactly like 'schemaSliceType' case
-					for i := 0; i < sliceSchemaField.Len(); i++ {
-						if err := check(sliceSchemaField.Index(i), fmt.Appendf(path, "/%s/%d", info.jsonName, i)); err != nil {
-							return err
-						}
-					}
-				}
 			}
 
 		}

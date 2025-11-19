@@ -123,7 +123,7 @@ func TestFor(t *testing.T) {
 					Type: "object",
 					Properties: map[string]*schema{
 						"f":      {Type: "integer", Description: "fdesc"},
-						"G":      {Type: "array", Items: &jsonschema.SchemaOrSchemaArray{Schema: &schema{Type: "number"}}},
+						"G":      {Type: "array", Items: &schema{Type: "number"}},
 						"P":      {Types: []string{"null", "boolean"}, Description: "pdesc"},
 						"NoSkip": {Type: "string"},
 					},
@@ -375,7 +375,7 @@ func TestForWithMutation(t *testing.T) {
 	}
 	s.Required[0] = "mutated"
 	s.Properties["A"].Type = "mutated"
-	s.Properties["C"].Items.Schema.Type = "mutated"
+	s.Properties["C"].Items.Type = "mutated"
 	s.Properties["D"].MaxItems = jsonschema.Ptr(10)
 	s.Properties["D"].MinItems = jsonschema.Ptr(10)
 	s.Properties["E"].Types[0] = "mutated"
@@ -390,7 +390,7 @@ func TestForWithMutation(t *testing.T) {
 	if s2.Properties["B"].AdditionalProperties.Type == "mutated" {
 		t.Fatalf("ForWithMutation: expected B.AdditionalProperties.Type to not be mutated")
 	}
-	if s2.Properties["C"].Items.Schema.Type == "mutated" {
+	if s2.Properties["C"].Items.Type == "mutated" {
 		t.Fatalf("ForWithMutation: expected C.Items.Type to not be mutated")
 	}
 	if *s2.Properties["D"].MaxItems == 10 {
@@ -466,7 +466,7 @@ func TestDupSchema(t *testing.T) {
 	if g, w := s.Properties["A"].Description, "arr"; g != w {
 		t.Errorf("A: got %q, want %q", g, w)
 	}
-	if g, w := s.Properties["A"].Items.Schema.Description, ""; g != w {
+	if g, w := s.Properties["A"].Items.Description, ""; g != w {
 		t.Errorf("A.items: got %q, want %q", g, w)
 	}
 }

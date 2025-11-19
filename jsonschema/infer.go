@@ -211,8 +211,8 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		if itemsSchema == nil {
 			return nil, nil
 		}
-		s.Items = &SchemaOrSchemaArray{Schema: itemsSchema}
-		if ignore && s.Items.Schema == nil {
+		s.Items = itemsSchema
+		if ignore && s.Items == nil {
 			// Ignore if the element type is invalid.
 			return nil, nil
 		}

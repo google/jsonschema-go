@@ -23,7 +23,7 @@ func TestGoRoundTrip(t *testing.T) {
 		{Types: []string{"null", "number"}},
 		{Type: "string", MinLength: Ptr(20)},
 		{Minimum: Ptr(20.0)},
-		{Items: &SchemaOrSchemaArray{Schema: &Schema{Type: "integer"}}},
+		{Items: &Schema{Type: "integer"}},
 		{Const: Ptr(any(0))},
 		{Const: Ptr(any(nil))},
 		{Const: Ptr(any([]int{}))},

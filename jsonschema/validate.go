@@ -318,8 +318,8 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		if st.rs.draft == draft7 {
 			// For draft-07: additionalItems applies to remaining items after items array.
 			// If items is a Schema or if items is not set, additionalItems should be ignored
-			if schema.Items != nil && schema.Items.Array != nil {
-				for i, ischema := range schema.Items.Array {
+			if schema.ItemsArray != nil {
+				for i, ischema := range schema.ItemsArray {
 					if i >= instance.Len() {
 						break // shorter is OK
 					}
@@ -327,18 +327,18 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 						return err
 					}
 				}
-				anns.noteEndIndex(min(len(schema.Items.Array), instance.Len()))
+				anns.noteEndIndex(min(len(schema.ItemsArray), instance.Len()))
 				if schema.AdditionalItems != nil {
-					for i := len(schema.Items.Array); i < instance.Len(); i++ {
+					for i := len(schema.ItemsArray); i < instance.Len(); i++ {
 						if err := st.validate(instance.Index(i), schema.AdditionalItems, nil); err != nil {
 							return err
 						}
 					}
 					anns.allItems = true
 				}
-			} else if schema.Items != nil && schema.Items.Schema != nil {
+			} else if schema.Items != nil {
 				for i := 0; i < instance.Len(); i++ {
-					if err := st.validate(instance.Index(i), schema.Items.Schema, nil); err != nil {
+					if err := st.validate(instance.Index(i), schema.Items, nil); err != nil {
 						return err
 					}
 				}
@@ -356,9 +356,9 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 				}
 			}
 			anns.noteEndIndex(min(len(schema.PrefixItems), instance.Len()))
-			if schema.Items != nil && schema.Items.Schema != nil {
+			if schema.Items != nil {
 				for i := len(schema.PrefixItems); i < instance.Len(); i++ {
-					if err := st.validate(instance.Index(i), schema.Items.Schema, nil); err != nil {
+					if err := st.validate(instance.Index(i), schema.Items, nil); err != nil {
 						return err
 					}
 				}
@@ -568,17 +568,21 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		}
 
 		if st.rs.draft == draft7 {
-			if schema.Dependencies != nil {
-				for dprop, dependecies := range schema.Dependencies {
+			if schema.DependencyStrings != nil {
+				for dprop, dstrings := range schema.DependencyStrings {
 					if hasProperty(dprop) {
-						if dependecies.Schema != nil {
-							err := st.validate(instance, dependecies.Schema, &anns)
-							if err != nil {
-								return err
-							}
-						}
-						if m := missingProperties(dependecies.Array); len(m) > 0 {
+						if m := missingProperties(dstrings); len(m) > 0 {
 							return fmt.Errorf("dependentRequired[%q]: missing properties %q", dprop, m)
+						}
+					}
+				}
+			}
+			if schema.DependencySchemas != nil {
+				for dprop, dschema := range schema.DependencySchemas {
+					if hasProperty(dprop) {
+						err := st.validate(instance, dschema, &anns)
+						if err != nil {
+							return err
 						}
 					}
 				}

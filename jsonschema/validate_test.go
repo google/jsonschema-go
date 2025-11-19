@@ -513,7 +513,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &SchemaOrSchemaArray{Schema: &Schema{
+				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -523,7 +523,6 @@ func TestStructEmbedding(t *testing.T) {
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
 				}},
-			},
 			validInstance: []Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -534,7 +533,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Durian{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &SchemaOrSchemaArray{Schema: &Schema{
+				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -544,7 +543,6 @@ func TestStructEmbedding(t *testing.T) {
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
 				}},
-			},
 			validInstance: []Durian{
 				{cranberry: &cranberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{cranberry: &cranberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -555,7 +553,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Fig{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &SchemaOrSchemaArray{Schema: &Schema{
+				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -565,7 +563,6 @@ func TestStructEmbedding(t *testing.T) {
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
 				}},
-			},
 			validInstance: []Fig{
 				{Elderberry: Elderberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Elderberry: Elderberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -576,7 +573,7 @@ func TestStructEmbedding(t *testing.T) {
 			targetType: reflect.TypeOf([]Honeyberry{}),
 			wantSchema: &Schema{
 				Type: "array",
-				Items: &SchemaOrSchemaArray{Schema: &Schema{
+				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
 						"id":    {Type: "string"},
@@ -586,7 +583,6 @@ func TestStructEmbedding(t *testing.T) {
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
 				}},
-			},
 			validInstance: []Honeyberry{
 				{grape: grape{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{grape: grape{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
