@@ -198,7 +198,14 @@ func (s *Schema) basicChecks() error {
 
 type schemaWithoutMethods Schema // doesn't implement json.{Unm,M}arshaler
 
-func (s *Schema) MarshalJSON() ([]byte, error) {
+// NOTE: Use a value receiver here to avoid the encoding/json bugs
+// described in golang/go#22967, golang/go#33993, and golang/go#55890.
+// With a pointer receiver, MarshalJSON is only called for Schema in
+// some cases (for example when the field value is addressable, or not
+// stored as a map value), which leads to inconsistent JSON encoding.
+// A value receiver makes Schema itself implement json.Marshaler and
+// ensures that encoding/json always calls this method.
+func (s Schema) MarshalJSON() ([]byte, error) {
 	if err := s.basicChecks(); err != nil {
 		return nil, err
 	}
