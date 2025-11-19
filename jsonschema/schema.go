@@ -520,7 +520,7 @@ func init() {
 			switch sf.Name {
 			case "Items", "ItemsArray":
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "items"})
-			case "DependencyStrings", "DependencySchemas":
+			case "DependencySchemas", "DependencyStrings":
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "dependencies"})
 			}
 		}
