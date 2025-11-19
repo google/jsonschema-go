@@ -216,7 +216,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		}
 
 	case reflect.Slice, reflect.Array:
-		if t.Kind() == reflect.Slice {
+		if os.Getenv(debugEnv) != "typeschemasnull=1" && t.Kind() == reflect.Slice {
 			s.Types = []string{"null", "array"}
 		} else {
 			s.Type = "array"
