@@ -65,6 +65,40 @@ func TestCheckLocal(t *testing.T) {
 	}
 }
 
+func TestBasicChecks(t *testing.T) {
+	for _, tt := range []struct {
+		s    *Schema
+		want string // error must be non-nil and match this regexp
+	}{
+		{
+			&Schema{Type: "test", Types: []string{"test"}},
+			"both Type and Types are set; at most one should be",
+		},
+		{
+			&Schema{Defs: map[string]*Schema{}, Definitions: map[string]*Schema{}},
+			"both Defs and Definitions are set; at most one should be",
+		},
+		{
+			&Schema{Items: &Schema{}, ItemsArray: []*Schema{{}}},
+			"both Items and ItemsArray are set; at most one should be",
+		},
+		{
+			&Schema{DependencySchemas: map[string]*Schema{"A": {}}, DependencyStrings: map[string][]string{"A": {"B"}}},
+			"dependency key \"A\" cannot be defined as both a schema and a string array",
+		},
+	} {
+		_, err := tt.s.Resolve(nil)
+		if err == nil {
+			t.Errorf("%s: unexpectedly passed", tt.s.json())
+			continue
+		}
+		if !regexp.MustCompile(tt.want).MatchString(err.Error()) {
+			t.Errorf("checkLocal returned error\n%q\nwanted it to match\n%s\nregexp: %s",
+				tt.s.json(), err, tt.want)
+		}
+	}
+}
+
 func TestPaths(t *testing.T) {
 	// CheckStructure should assign paths to schemas.
 	// This test also verifies that Schema.all visits maps in sorted order.

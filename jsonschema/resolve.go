@@ -49,17 +49,17 @@ func newResolved(s *Schema) *Resolved {
 // detectDraft inspects the raw JSON to determine the schema version.
 func detectDraft(s *Schema) draft {
 	// Check explicit $schema declaration
-	if s.Schema != "" {
-		if strings.Contains(s.Schema, "draft-07") {
-			return draft7
-		}
-		if strings.Contains(s.Schema, "2020-12") {
-			return draft2020
-		}
+	switch s.Schema {
+	case draft7SchemaVersion:
+		return draft7
+	case draft7SecSchemaVersion:
+		return draft7
+	case draft202012SchemaVersion:
+		return draft2020
+	default:
+		// If nothing matches default to the latest supported version.
+		return draft2020
 	}
-
-	// If no clues are found default to the latest supported version.
-	return draft2020
 }
 
 // resolvedInfo holds information specific to a schema that is computed by [Schema.Resolve].
@@ -337,7 +337,7 @@ func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo)
 	// validate them.
 	// Currently, it's just the $vocabulary property.
 	// As a special case, we can validate the 2020-12 meta-schema.
-	if s.Vocabulary != nil && s.Schema != draft202012 {
+	if s.Vocabulary != nil && s.Schema != draft202012SchemaVersion {
 		addf("cannot validate a schema with $vocabulary")
 	}
 

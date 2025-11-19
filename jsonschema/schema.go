@@ -199,6 +199,15 @@ func (s *Schema) basicChecks() error {
 	if s.Defs != nil && s.Definitions != nil {
 		return errors.New("both Defs and Definitions are set; at most one should be")
 	}
+	if s.Items != nil && s.ItemsArray != nil {
+		return errors.New("both Items and ItemsArray are set; at most one should be")
+	}
+	for key := range s.DependencySchemas {
+		// Check if the key exists in the dependency strings map
+		if _, exists := s.DependencyStrings[key]; exists {
+			return fmt.Errorf("dependency key %q cannot be defined as both a schema and a string array", key)
+		}
+	}
 	return nil
 }
 

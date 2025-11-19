@@ -21,14 +21,14 @@ import (
 
 // The values of the "$schema" keyword for the versions that we can validate.
 const (
-	draft07     = "http://json-schema.org/draft-07/schema#"
-	draft07Sec  = "https://json-schema.org/draft-07/schema#"
-	draft202012 = "https://json-schema.org/draft/2020-12/schema"
+	draft7SchemaVersion      = "http://json-schema.org/draft-07/schema#"
+	draft7SecSchemaVersion   = "https://json-schema.org/draft-07/schema#"
+	draft202012SchemaVersion = "https://json-schema.org/draft/2020-12/schema"
 )
 
 // isValidSchemaVersion checks if the given schema version is supported
 func isValidSchemaVersion(version string) bool {
-	return version == "" || version == draft07 || version == draft07Sec || version == draft202012
+	return version == "" || version == draft7SchemaVersion || version == draft7SecSchemaVersion || version == draft202012SchemaVersion
 }
 
 // Validate validates the instance, which must be a JSON value, against the schema.

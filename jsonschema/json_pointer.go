@@ -146,6 +146,9 @@ func lookupSchemaField(v reflect.Value, name string) reflect.Value {
 		}
 		return v.FieldByName("ItemsArray")
 	}
+	if name == "dependencies" {
+		return v.FieldByName("DependencySchemas")
+	}
 	if sf, ok := schemaFieldMap[name]; ok {
 		return v.FieldByIndex(sf.Index)
 	}
