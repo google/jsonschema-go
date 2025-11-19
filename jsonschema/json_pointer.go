@@ -147,6 +147,9 @@ func lookupSchemaField(v reflect.Value, name string) reflect.Value {
 		return v.FieldByName("ItemsArray")
 	}
 	if name == "dependencies" {
+		// The "items" keyword refers to both DependencyStrings and DependencySchemas maps.
+		// The value on schemaFieldMap is not garanteed to be DependencySchemas which we want
+		// for pointer dereference. So we use FieldByName to get the DependencySchemas map.
 		return v.FieldByName("DependencySchemas")
 	}
 	if sf, ok := schemaFieldMap[name]; ok {

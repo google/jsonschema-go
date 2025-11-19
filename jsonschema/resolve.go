@@ -50,9 +50,7 @@ func newResolved(s *Schema) *Resolved {
 func detectDraft(s *Schema) draft {
 	// Check explicit $schema declaration
 	switch s.Schema {
-	case draft7SchemaVersion:
-		return draft7
-	case draft7SecSchemaVersion:
+	case draft7SchemaVersion, draft7SecSchemaVersion:
 		return draft7
 	case draft202012SchemaVersion:
 		return draft2020

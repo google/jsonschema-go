@@ -506,7 +506,8 @@ var (
 )
 
 func init() {
-	for _, sf := range reflect.VisibleFields(reflect.TypeFor[Schema]()) {
+	t := reflect.VisibleFields(reflect.TypeFor[Schema]())
+	for _, sf := range t {
 		info := fieldJSONInfo(sf)
 		if !info.omit {
 			schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, info.name})
@@ -517,17 +518,16 @@ func init() {
 			// we still need these fields in schemaFieldInfos for creating schema trees and calculating paths and refs.
 			// so we manually create them and assign the jsonName to the original field json name.
 			switch sf.Name {
-			case "Items":
+			case "Items", "ItemsArray":
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "items"})
-			case "ItemsArray":
-				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "items"})
-			case "DependencyStrings":
-				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "dependencies"})
-			case "DependencySchemas":
+			case "DependencyStrings", "DependencySchemas":
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "dependencies"})
 			}
 		}
 	}
+	// The value of "dependencies" this sort of schemaFieldInfos.
+	// This sort is unstable and is comparing the json.names of DependencyStrings and DependencySchemas which are both "dependencies".
+	// Since the sort is unstable it cannot be guarantied that "dependencies" has the DependencySchemas value.
 	slices.SortFunc(schemaFieldInfos, func(i1, i2 structFieldInfo) int {
 		return cmp.Compare(i1.jsonName, i2.jsonName)
 	})
