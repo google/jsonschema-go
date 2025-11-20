@@ -18,10 +18,11 @@ import (
 )
 
 // A Schema is a JSON schema object.
-// It corresponds to the 2020-12 draft, as described in https://json-schema.org/draft/2020-12,
-// specifically:
-//   - https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-01
-//   - https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01
+// It supports both draft-07 and the 2020-12 draft specifications:
+//   - Draft-07: https://json-schema.org/draft-07/draft-handrews-json-schema-01
+//     and https://json-schema.org/draft-07/draft-handrews-json-schema-validation-01
+//   - Draft 2020-12: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-01
+//     and https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01
 //
 // A Schema value may have non-zero values for more than one field:
 // all relevant non-zero fields are used for validation.
@@ -41,13 +42,16 @@ import (
 // requires equality to some slice element, so it vacuously rejects every instance.
 type Schema struct {
 	// core
-	ID      string             `json:"$id,omitempty"`
-	Schema  string             `json:"$schema,omitempty"`
-	Ref     string             `json:"$ref,omitempty"`
-	Comment string             `json:"$comment,omitempty"`
-	Defs    map[string]*Schema `json:"$defs,omitempty"`
-	// definitions is deprecated but still allowed. It is a synonym for $defs.
+	ID          string             `json:"$id,omitempty"`
+	Schema      string             `json:"$schema,omitempty"`
+	Ref         string             `json:"$ref,omitempty"`
+	Comment     string             `json:"$comment,omitempty"`
+	Defs        map[string]*Schema `json:"$defs,omitempty"`
 	Definitions map[string]*Schema `json:"definitions,omitempty"`
+
+	// split draft 7 Dependencies into DependencySchemas and DependencyStrings
+	DependencySchemas map[string]*Schema  `json:"-"`
+	DependencyStrings map[string][]string `json:"-"`
 
 	Anchor        string          `json:"$anchor,omitempty"`
 	DynamicAnchor string          `json:"$dynamicAnchor,omitempty"`
@@ -81,7 +85,8 @@ type Schema struct {
 
 	// arrays
 	PrefixItems      []*Schema `json:"prefixItems,omitempty"`
-	Items            *Schema   `json:"items,omitempty"`
+	Items            *Schema   `json:"-"`
+	ItemsArray       []*Schema `json:"-"`
 	MinItems         *int      `json:"minItems,omitempty"`
 	MaxItems         *int      `json:"maxItems,omitempty"`
 	AdditionalItems  *Schema   `json:"additionalItems,omitempty"`
@@ -181,6 +186,7 @@ func (s *Schema) CloneSchemas() *Schema {
 				m[k] = ss.CloneSchemas()
 			}
 			fv.Set(reflect.ValueOf(m))
+
 		}
 	}
 	return &s2
@@ -193,6 +199,15 @@ func (s *Schema) basicChecks() error {
 	if s.Defs != nil && s.Definitions != nil {
 		return errors.New("both Defs and Definitions are set; at most one should be")
 	}
+	if s.Items != nil && s.ItemsArray != nil {
+		return errors.New("both Items and ItemsArray are set; at most one should be")
+	}
+	for key := range s.DependencySchemas {
+		// Check if the key exists in the dependency strings map
+		if _, exists := s.DependencyStrings[key]; exists {
+			return fmt.Errorf("dependency key %q cannot be defined as both a schema and a string array", key)
+		}
+	}
 	return nil
 }
 
@@ -202,7 +217,6 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 	if err := s.basicChecks(); err != nil {
 		return nil, err
 	}
-
 	// Marshal either Type or Types as "type".
 	var typ any
 	switch {
@@ -211,11 +225,36 @@ func (s *Schema) MarshalJSON() ([]byte, error) {
 	case s.Types != nil:
 		typ = s.Types
 	}
+
+	var items any
+	switch {
+	case s.Items != nil:
+		items = s.Items
+	case s.ItemsArray != nil:
+		items = s.ItemsArray
+	}
+
+	var dep map[string]any
+	size := len(s.DependencySchemas) + len(s.DependencyStrings)
+	if size > 0 {
+		dep = make(map[string]any, size)
+		for k, v := range s.DependencySchemas {
+			dep[k] = v
+		}
+		for k, v := range s.DependencyStrings {
+			dep[k] = v
+		}
+	}
+
 	ms := struct {
-		Type any `json:"type,omitempty"`
+		Type         any            `json:"type,omitempty"`
+		Dependencies map[string]any `json:"dependencies,omitempty"`
+		Items        any            `json:"items,omitempty"`
 		*schemaWithoutMethods
 	}{
 		Type:                 typ,
+		Dependencies:         dep,
+		Items:                items,
 		schemaWithoutMethods: (*schemaWithoutMethods)(s),
 	}
 	bs, err := marshalStructWithMap(&ms, "Extra")
@@ -248,16 +287,18 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	}
 
 	ms := struct {
-		Type          json.RawMessage `json:"type,omitempty"`
-		Const         json.RawMessage `json:"const,omitempty"`
-		MinLength     *integer        `json:"minLength,omitempty"`
-		MaxLength     *integer        `json:"maxLength,omitempty"`
-		MinItems      *integer        `json:"minItems,omitempty"`
-		MaxItems      *integer        `json:"maxItems,omitempty"`
-		MinProperties *integer        `json:"minProperties,omitempty"`
-		MaxProperties *integer        `json:"maxProperties,omitempty"`
-		MinContains   *integer        `json:"minContains,omitempty"`
-		MaxContains   *integer        `json:"maxContains,omitempty"`
+		Type          json.RawMessage            `json:"type,omitempty"`
+		Dependencies  map[string]json.RawMessage `json:"dependencies,omitempty"`
+		Items         json.RawMessage            `json:"items,omitempty"`
+		Const         json.RawMessage            `json:"const,omitempty"`
+		MinLength     *integer                   `json:"minLength,omitempty"`
+		MaxLength     *integer                   `json:"maxLength,omitempty"`
+		MinItems      *integer                   `json:"minItems,omitempty"`
+		MaxItems      *integer                   `json:"maxItems,omitempty"`
+		MinProperties *integer                   `json:"minProperties,omitempty"`
+		MaxProperties *integer                   `json:"maxProperties,omitempty"`
+		MinContains   *integer                   `json:"minContains,omitempty"`
+		MaxContains   *integer                   `json:"maxContains,omitempty"`
 
 		*schemaWithoutMethods
 	}{
@@ -280,6 +321,49 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	// Unmarshal "items" as either Items or ItemsArray.
+	if len(ms.Items) > 0 {
+		switch ms.Items[0] {
+		case '[':
+			var schemas []*Schema
+			err = json.Unmarshal(ms.Items, &schemas)
+			s.ItemsArray = schemas
+		default:
+			var schema Schema
+			err = json.Unmarshal(ms.Items, &schema)
+			s.Items = &schema
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	// Unmarshal "Dependencies" values as either string arrays or schemas
+	// and assign them to specific map DependencySchemas or DependencyStrings.
+	for k, v := range ms.Dependencies {
+		if len(v) > 0 {
+			switch v[0] {
+			case '[':
+				var dstrings []string
+				err = json.Unmarshal(v, &dstrings)
+				if s.DependencyStrings == nil {
+					s.DependencyStrings = make(map[string][]string)
+				}
+				s.DependencyStrings[k] = dstrings
+			default:
+				var dschema Schema
+				err = json.Unmarshal(v, &dschema)
+				if s.DependencySchemas == nil {
+					s.DependencySchemas = make(map[string]*Schema)
+				}
+				s.DependencySchemas[k] = &dschema
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	unmarshalAnyPtr := func(p **any, raw json.RawMessage) error {
@@ -389,6 +473,7 @@ func (s *Schema) everyChild(f func(*Schema) bool) bool {
 			}
 		}
 	}
+
 	return true
 }
 
@@ -421,12 +506,28 @@ var (
 )
 
 func init() {
-	for _, sf := range reflect.VisibleFields(reflect.TypeFor[Schema]()) {
+	t := reflect.VisibleFields(reflect.TypeFor[Schema]())
+	for _, sf := range t {
 		info := fieldJSONInfo(sf)
 		if !info.omit {
 			schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, info.name})
+		} else {
+			// jsoninfo.name is used to build the info paths. The items and dependencies are ommited,
+			// since the original fields are separated to handle the union types supported in json and
+			// these fields have custom marshalling and unmarshalling logic.
+			// we still need these fields in schemaFieldInfos for creating schema trees and calculating paths and refs.
+			// so we manually create them and assign the jsonName to the original field json name.
+			switch sf.Name {
+			case "Items", "ItemsArray":
+				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "items"})
+			case "DependencySchemas", "DependencyStrings":
+				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "dependencies"})
+			}
 		}
 	}
+	// The value of "dependencies" this sort of schemaFieldInfos.
+	// This sort is unstable and is comparing the json.names of DependencyStrings and DependencySchemas which are both "dependencies".
+	// Since the sort is unstable it cannot be guarantied that "dependencies" has the DependencySchemas value.
 	slices.SortFunc(schemaFieldInfos, func(i1, i2 structFieldInfo) int {
 		return cmp.Compare(i1.jsonName, i2.jsonName)
 	})

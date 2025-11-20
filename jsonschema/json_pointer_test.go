@@ -49,11 +49,71 @@ func TestDereferenceJSONPointer(t *testing.T) {
 	}
 }
 
-func TestDerefernceJSONPointerErrors(t *testing.T) {
+func TestDereferenceJSONPointerDraft7(t *testing.T) {
+	s := &Schema{
+		AllOf: []*Schema{{}, {}},
+		Definitions: map[string]*Schema{
+			"":  {Properties: map[string]*Schema{"": {}}},
+			"A": {},
+			"B": {
+				Definitions: map[string]*Schema{
+					"X": {},
+					"Y": {},
+				},
+			},
+			"/~": {},
+			"~1": {},
+		},
+		ItemsArray: []*Schema{{}, {Items: &Schema{}}},
+		DependencySchemas: map[string]*Schema{
+			"A": {},
+			"B": {
+				Items: &Schema{},
+			},
+		},
+		DependencyStrings: map[string][]string{
+			"C": {"1", "2"},
+		},
+	}
+
+	for _, tt := range []struct {
+		ptr  string
+		want any
+	}{
+		{"", s},
+		{"/definitions/A", s.Definitions["A"]},
+		{"/definitions/B", s.Definitions["B"]},
+		{"/definitions/B/definitions/X", s.Definitions["B"].Definitions["X"]},
+		{"/definitions//properties/", s.Definitions[""].Properties[""]},
+		{"/allOf/1", s.AllOf[1]},
+		{"/definitions/~1~0", s.Definitions["/~"]},
+		{"/definitions/~01", s.Definitions["~1"]},
+		{"/items/0", s.ItemsArray[0]},
+		{"/items/1/items", s.ItemsArray[1].Items},
+		{"/dependencies/A", s.DependencySchemas["A"]},
+		{"/dependencies/B/items", s.DependencySchemas["B"].Items},
+	} {
+		got, err := dereferenceJSONPointer(s, tt.ptr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tt.want {
+			t.Errorf("%s:\ngot  %+v\nwant %+v", tt.ptr, got, tt.want)
+		}
+	}
+}
+
+func TestDereferenceJSONPointerErrors(t *testing.T) {
 	s := &Schema{
 		Type:     "t",
 		Items:    &Schema{},
 		Required: []string{"a"},
+		DependencySchemas: map[string]*Schema{
+			"B": {},
+		},
+		DependencyStrings: map[string][]string{
+			"A": {"1", "2"},
+		},
 	}
 	for _, tt := range []struct {
 		ptr  string
@@ -67,6 +127,7 @@ func TestDerefernceJSONPointerErrors(t *testing.T) {
 		{"/required/x", "invalid int"},
 		{"/required/1", "out of bounds"},
 		{"/properties/x", "no key"},
+		{"/dependencies/A", "no key \"A\" in map"},
 	} {
 		_, err := dereferenceJSONPointer(s, tt.ptr)
 		if err == nil {

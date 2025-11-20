@@ -19,15 +19,24 @@ import (
 	"unicode/utf8"
 )
 
-// The value of the "$schema" keyword for the version that we can validate.
-const draft202012 = "https://json-schema.org/draft/2020-12/schema"
+// The values of the "$schema" keyword for the versions that we can validate.
+const (
+	draft7SchemaVersion      = "http://json-schema.org/draft-07/schema#"
+	draft7SecSchemaVersion   = "https://json-schema.org/draft-07/schema#"
+	draft202012SchemaVersion = "https://json-schema.org/draft/2020-12/schema"
+)
+
+// isValidSchemaVersion checks if the given schema version is supported
+func isValidSchemaVersion(version string) bool {
+	return version == "" || version == draft7SchemaVersion || version == draft7SecSchemaVersion || version == draft202012SchemaVersion
+}
 
 // Validate validates the instance, which must be a JSON value, against the schema.
 // It returns nil if validation is successful or an error if it is not.
 // If the schema type is "object", instance can be a map[string]any or a struct.
 func (rs *Resolved) Validate(instance any) error {
-	if s := rs.root.Schema; s != "" && s != draft202012 {
-		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
+	if s := rs.root.Schema; !isValidSchemaVersion(s) {
+		return fmt.Errorf("cannot validate version %s, supported versions: draft-07 and draft 2020-12", s)
 	}
 	st := &state{rs: rs}
 	return st.validate(reflect.ValueOf(instance), st.rs.root, nil)
@@ -39,8 +48,8 @@ func (rs *Resolved) Validate(instance any) error {
 // TODO(jba): account for dynamic refs. This algorithm simple-mindedly
 // treats each schema with a default as its own root.
 func (rs *Resolved) validateDefaults() error {
-	if s := rs.root.Schema; s != "" && s != draft202012 {
-		return fmt.Errorf("cannot validate version %s, only %s", s, draft202012)
+	if s := rs.root.Schema; !isValidSchemaVersion(s) {
+		return fmt.Errorf("cannot validate version %s, supported versions: draft-07 and draft 2020-12", s)
 	}
 	st := &state{rs: rs}
 	for s := range rs.root.all() {
@@ -90,6 +99,19 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	}
 
 	schemaInfo := st.rs.resolvedInfos[schema]
+
+	var anns annotations // all the annotations for this call and child calls
+	// $ref: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
+	if schema.Ref != "" {
+		if err := st.validate(instance, schemaInfo.resolvedRef, &anns); err != nil {
+			return err
+		}
+		// https://json-schema.org/draft-07/draft-handrews-json-schema-01#rfc.section.8.3
+		// "All other properties in a "$ref" object MUST be ignored."
+		if st.rs.draft == draft7 {
+			return nil
+		}
+	}
 
 	// type: https://json-schema.org/draft/2020-12/draft-bhutton-json-schema-validation-01#section-6.1.1
 	if schema.Type != "" || schema.Types != nil {
@@ -179,15 +201,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 
 		if schema.Pattern != "" && !schemaInfo.pattern.MatchString(str) {
 			return fmt.Errorf("pattern: %q does not match regular expression %q", str, schema.Pattern)
-		}
-	}
-
-	var anns annotations // all the annotations for this call and child calls
-
-	// $ref: https://json-schema.org/draft/2020-12/json-schema-core#section-8.2.3.1
-	if schema.Ref != "" {
-		if err := st.validate(instance, schemaInfo.resolvedRef, &anns); err != nil {
-			return err
 		}
 	}
 
@@ -297,30 +310,62 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	// arrays
 	// TODO(jba): consider arrays of structs.
 	if instance.Kind() == reflect.Array || instance.Kind() == reflect.Slice {
+		// Handle both draft-07 and draft 2020-12
 		// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.1
 		// This validate call doesn't collect annotations for the items of the instance; they are separate
 		// instances in their own right.
 		// TODO(jba): if the test suite doesn't cover this case, add a test. For example, nested arrays.
-		for i, ischema := range schema.PrefixItems {
-			if i >= instance.Len() {
-				break // shorter is OK
+		if st.rs.draft == draft7 {
+			// For draft-07: additionalItems applies to remaining items after items array.
+			// If items is a Schema or if items is not set, additionalItems should be ignored
+			if schema.ItemsArray != nil {
+				for i, ischema := range schema.ItemsArray {
+					if i >= instance.Len() {
+						break // shorter is OK
+					}
+					if err := st.validate(instance.Index(i), ischema, nil); err != nil {
+						return err
+					}
+				}
+				anns.noteEndIndex(min(len(schema.ItemsArray), instance.Len()))
+				if schema.AdditionalItems != nil {
+					for i := len(schema.ItemsArray); i < instance.Len(); i++ {
+						if err := st.validate(instance.Index(i), schema.AdditionalItems, nil); err != nil {
+							return err
+						}
+					}
+					anns.allItems = true
+				}
+			} else if schema.Items != nil {
+				for i := 0; i < instance.Len(); i++ {
+					if err := st.validate(instance.Index(i), schema.Items, nil); err != nil {
+						return err
+					}
+				}
+				// Note that all the items in this array have been validated.
+				anns.allItems = true
 			}
-			if err := st.validate(instance.Index(i), ischema, nil); err != nil {
-				return err
-			}
-		}
-		anns.noteEndIndex(min(len(schema.PrefixItems), instance.Len()))
-
-		if schema.Items != nil {
-			for i := len(schema.PrefixItems); i < instance.Len(); i++ {
-				if err := st.validate(instance.Index(i), schema.Items, nil); err != nil {
+		} else if st.rs.draft == draft2020 {
+			// For draft 2020-12: items applies to remaining items after prefixItems
+			for i, ischema := range schema.PrefixItems {
+				if i >= instance.Len() {
+					break // shorter is OK
+				}
+				if err := st.validate(instance.Index(i), ischema, nil); err != nil {
 					return err
 				}
 			}
-			// Note that all the items in this array have been validated.
-			anns.allItems = true
+			anns.noteEndIndex(min(len(schema.PrefixItems), instance.Len()))
+			if schema.Items != nil {
+				for i := len(schema.PrefixItems); i < instance.Len(); i++ {
+					if err := st.validate(instance.Index(i), schema.Items, nil); err != nil {
+						return err
+					}
+				}
+				// Note that all the items in this array have been validated.
+				anns.allItems = true
+			}
 		}
-
 		nContains := 0
 		if schema.Contains != nil {
 			for i := range instance.Len() {
@@ -521,32 +566,56 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 				return fmt.Errorf("required: missing properties: %q", m)
 			}
 		}
-		if schema.DependentRequired != nil {
-			// "Validation succeeds if, for each name that appears in both the instance
-			// and as a name within this keyword's value, every item in the corresponding
-			// array is also the name of a property in the instance." §6.5.4
-			for dprop, reqs := range schema.DependentRequired {
-				if hasProperty(dprop) {
-					if m := missingProperties(reqs); len(m) > 0 {
-						return fmt.Errorf("dependentRequired[%q]: missing properties %q", dprop, m)
+
+		if st.rs.draft == draft7 {
+			if schema.DependencyStrings != nil {
+				for dprop, dstrings := range schema.DependencyStrings {
+					if hasProperty(dprop) {
+						if m := missingProperties(dstrings); len(m) > 0 {
+							return fmt.Errorf("dependentRequired[%q]: missing properties %q", dprop, m)
+						}
+					}
+				}
+			}
+			if schema.DependencySchemas != nil {
+				for dprop, dschema := range schema.DependencySchemas {
+					if hasProperty(dprop) {
+						err := st.validate(instance, dschema, &anns)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
+		} else if st.rs.draft == draft2020 {
+			if schema.DependentRequired != nil {
+				// "Validation succeeds if, for each name that appears in both the instance
+				// and as a name within this keyword's value, every item in the corresponding
+				// array is also the name of a property in the instance." §6.5.4
+				for dprop, reqs := range schema.DependentRequired {
+					if hasProperty(dprop) {
+						if m := missingProperties(reqs); len(m) > 0 {
+							return fmt.Errorf("dependentRequired[%q]: missing properties %q", dprop, m)
+						}
+					}
+				}
+			}
+
+			// https://json-schema.org/draft/2020-12/json-schema-core#section-10.2.2.4
+			if schema.DependentSchemas != nil {
+				// This does not collect annotations, although it seems like it should.
+				for dprop, ss := range schema.DependentSchemas {
+					if hasProperty(dprop) {
+						// TODO: include dependentSchemas[dprop] in the errors.
+						err := st.validate(instance, ss, &anns)
+						if err != nil {
+							return err
+						}
 					}
 				}
 			}
 		}
 
-		// https://json-schema.org/draft/2020-12/json-schema-core#section-10.2.2.4
-		if schema.DependentSchemas != nil {
-			// This does not collect annotations, although it seems like it should.
-			for dprop, ss := range schema.DependentSchemas {
-				if hasProperty(dprop) {
-					// TODO: include dependentSchemas[dprop] in the errors.
-					err := st.validate(instance, ss, &anns)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
 		if schema.UnevaluatedProperties != nil && !anns.allProperties {
 			// This looks a lot like AdditionalProperties, but depends on in-place keywords like allOf
 			// in addition to sibling keywords.

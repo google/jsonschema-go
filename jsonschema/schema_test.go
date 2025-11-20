@@ -8,8 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestGoRoundTrip(t *testing.T) {
@@ -171,5 +175,55 @@ func TestCloneSchemas(t *testing.T) {
 	// s1's original schemas should be intact.
 	if s1.Contains != ss1 || s1.PrefixItems[0] != ss2 || s1.PrefixItems[1] != ss3 || ss5.Contains != ss4 || s1.Properties["a"] != ss5 {
 		t.Errorf("s1 modified")
+	}
+}
+
+func TestCloneMarshalDraft2020_12(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft2020-12/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testCloneMarshalValidate(t, files, "")
+}
+
+func TestCloneMarshalDraft7(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft7/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testCloneMarshalValidate(t, files, "https://json-schema.org/draft-07/schema#")
+}
+
+func testCloneMarshalValidate(t *testing.T, files []string, draft string) {
+	for _, file := range files {
+		base := filepath.Base(file)
+		t.Run(base, func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var groups []testGroup
+			if err := json.Unmarshal(data, &groups); err != nil {
+				t.Fatal(err)
+			}
+			for _, g := range groups {
+				t.Run(g.Description, func(t *testing.T) {
+					if g.Schema.Schema == "" {
+						g.Schema.Schema = draft
+					}
+					original := g.Schema.json()
+					clone := g.Schema.CloneSchemas()
+					if diff := cmp.Diff(original, clone.json()); diff != "" {
+						t.Fatalf("Schema mismatch (-want +got):\n%s", diff)
+					}
+				})
+			}
+		})
 	}
 }
