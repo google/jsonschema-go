@@ -223,7 +223,7 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 		*schemaWithoutMethods
 	}{
 		Type:                 typ,
-		schemaWithoutMethods: (*schemaWithoutMethods)(s),
+		schemaWithoutMethods: (*schemaWithoutMethods)(&s),
 	}
 	bs, err := marshalStructWithMap(&ms, "Extra")
 	if err != nil {
