@@ -36,7 +36,7 @@ type test struct {
 	ErrContains string
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateDraft2020_12(t *testing.T) {
 	files, err := filepath.Glob(filepath.FromSlash("testdata/draft2020-12/*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +44,21 @@ func TestValidate(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no files")
 	}
+	testValidate(t, files, "")
+}
+
+func TestValidateDraft7(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft7/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testValidate(t, files, "https://json-schema.org/draft-07/schema#")
+}
+
+func testValidate(t *testing.T, files []string, draft string) {
 	for _, file := range files {
 		base := filepath.Base(file)
 		t.Run(base, func(t *testing.T) {
@@ -57,6 +72,9 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
+					if g.Schema.Schema == "" {
+						g.Schema.Schema = draft
+					}
 					rs, err := g.Schema.Resolve(&ResolveOptions{Loader: loadRemote})
 					if err != nil {
 						t.Fatal(err)
@@ -504,8 +522,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
-			},
+				}},
 			validInstance: []Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -525,8 +542,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
-			},
+				}},
 			validInstance: []Durian{
 				{cranberry: &cranberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{cranberry: &cranberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -546,8 +562,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
-			},
+				}},
 			validInstance: []Fig{
 				{Elderberry: Elderberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Elderberry: Elderberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -567,8 +582,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				},
-			},
+				}},
 			validInstance: []Honeyberry{
 				{grape: grape{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{grape: grape{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -633,6 +647,14 @@ func loadRemote(uri *url.URL) (*Schema, error) {
 	const metaPrefix = "https://json-schema.org/draft/2020-12/"
 	if after, ok := strings.CutPrefix(uri.String(), metaPrefix); ok {
 		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft2020-12/" + after + ".json"))
+	}
+	const metaPrefixDraft7 = "https://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
+	}
+	const metaPrefixDraft7s = "http://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7s); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
 	}
 	return nil, fmt.Errorf("don't know how to load %s", uri)
 }
