@@ -95,7 +95,7 @@ are recorded in the schema, but ignored during validation.
 
 Minor and patch releases of this package may introduce behavior changes as part
 of bug fixes or correctness improvements. To help manage the impact of such
-changes, the package allows you to lock in specific behaviors using the
+changes, the package allows you to access previous behaviors using the
 `JSONSCHEMAGODEBUG` environment variable. The available settings are listed
 below; additional options may be introduced in future releases.
 

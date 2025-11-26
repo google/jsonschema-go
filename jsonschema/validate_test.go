@@ -509,7 +509,7 @@ func TestStructEmbedding(t *testing.T) {
 		validInstance any
 	}{
 		{
-			name:       "ExportedPointer",
+			name:       "Slice",
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
 				Types: []string{"null", "array"},
@@ -524,6 +524,28 @@ func TestStructEmbedding(t *testing.T) {
 					AdditionalProperties: falseSchema(),
 				}},
 			validInstance: []Banana{
+				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
+			name:       "Array",
+			targetType: reflect.TypeOf([2]Banana{}),
+			wantSchema: &Schema{
+				Type:     "array",
+				MinItems: Ptr(2),
+				MaxItems: Ptr(2),
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				}},
+			validInstance: [2]Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
 			},
