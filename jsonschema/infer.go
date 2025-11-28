@@ -56,7 +56,7 @@ type ForOptions struct {
 //     schema for additionalProperties.
 //   - Structs have schema type "object", and disallow additionalProperties.
 //     Their properties are derived from exported struct fields, using the
-//     struct field JSON name. Fields that are marked "omitempty" are
+//     struct field JSON name. Fields that are marked "omitempty" or "omitzero" are
 //     considered optional; all other fields become required properties.
 //   - Some types in the standard library that implement json.Marshaler
 //     translate to schemas that match the values to which they marshal.
