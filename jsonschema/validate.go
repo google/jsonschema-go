@@ -33,7 +33,7 @@ func isValidSchemaVersion(version string) bool {
 
 // Validate validates the instance, which must be a JSON value, against the schema.
 // It returns nil if validation is successful or an error if it is not.
-// If the schema type is "object", instance can be a map[string]any or a struct.
+// If the schema type is "object", instance should be a map[string]any.
 func (rs *Resolved) Validate(instance any) error {
 	if s := rs.root.Schema; !isValidSchemaVersion(s) {
 		return fmt.Errorf("cannot validate version %s, supported versions: draft-07 and draft 2020-12", s)
@@ -308,7 +308,6 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 	}
 
 	// arrays
-	// TODO(jba): consider arrays of structs.
 	if instance.Kind() == reflect.Array || instance.Kind() == reflect.Slice {
 		// Handle both draft-07 and draft 2020-12
 		// https://json-schema.org/draft/2020-12/json-schema-core#section-10.3.1
