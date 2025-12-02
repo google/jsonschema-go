@@ -509,10 +509,10 @@ func TestStructEmbedding(t *testing.T) {
 		validInstance any
 	}{
 		{
-			name:       "ExportedPointer",
+			name:       "Slice",
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -529,10 +529,32 @@ func TestStructEmbedding(t *testing.T) {
 			},
 		},
 		{
+			name:       "Array",
+			targetType: reflect.TypeOf([2]Banana{}),
+			wantSchema: &Schema{
+				Type:     "array",
+				MinItems: Ptr(2),
+				MaxItems: Ptr(2),
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				}},
+			validInstance: [2]Banana{
+				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
 			name:       "UnExportedPointer",
 			targetType: reflect.TypeOf([]Durian{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -552,7 +574,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "ExportedValue",
 			targetType: reflect.TypeOf([]Fig{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -572,7 +594,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "UnExportedValue",
 			targetType: reflect.TypeOf([]Honeyberry{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
