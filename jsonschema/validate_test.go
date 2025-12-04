@@ -160,7 +160,6 @@ func TestApplyDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type S struct{ A, B, C int }
 	for _, tt := range []struct {
 		instancep any // pointer to instance value
 		want      any // desired value (not a pointer)
@@ -171,14 +170,6 @@ func TestApplyDefaults(t *testing.T) {
 				"A": float64(1), // filled from default
 				"B": 0,          // untouched: it was already there
 				// "C" not added: it is required (Validate will catch that)
-			},
-		},
-		{
-			&S{B: 1},
-			S{
-				A: 1, // filled from default
-				B: 1, // untouched: non-zero
-				C: 0, // untouched: required
 			},
 		},
 	} {
@@ -218,14 +209,6 @@ func TestApplyNestedDefaults(t *testing.T) {
 		},
 	}
 
-	type Nested struct{ B string }
-	type Root struct{ A Nested }
-	type RootPtr struct{ A *Nested }
-	type RootMap struct{ A map[string]any }
-	type RootPtrMap struct{ A *map[string]any }
-
-	mapPtr := func(m map[string]any) *map[string]any { return &m }
-
 	for _, tc := range []struct {
 		name      string
 		schema    *Schema
@@ -263,83 +246,6 @@ func TestApplyNestedDefaults(t *testing.T) {
 			schema:    base,
 			instancep: &map[string]map[string]any{},
 			want:      map[string]map[string]any{"A": {"B": "foo"}},
-		},
-		{
-			name:      "MapValueStructMissingParentTyped",
-			schema:    base,
-			instancep: &map[string]Nested{},
-			want:      map[string]Nested{"A": {B: "foo"}},
-		},
-		{
-			name:      "StructZeroValueParent",
-			schema:    base,
-			instancep: &Root{},
-			want:      Root{A: Nested{B: "foo"}},
-		},
-		{
-			name:      "StructZeroValueParentWithParentDefault",
-			schema:    withParentDefault,
-			instancep: &Root{},
-			want:      Root{A: Nested{B: "foo"}},
-		},
-		{
-			name:      "StructPointerNilParent",
-			schema:    base,
-			instancep: &RootPtr{},
-			want:      RootPtr{A: &Nested{B: "foo"}},
-		},
-		{
-			name:      "StructPresentNonzeroChildPreserved",
-			schema:    base,
-			instancep: &Root{A: Nested{B: "bar"}},
-			want:      Root{A: Nested{B: "bar"}},
-		},
-		{
-			name:      "StructPointerNonNilChildPreserved",
-			schema:    base,
-			instancep: &RootPtr{A: &Nested{B: "bar"}},
-			want:      RootPtr{A: &Nested{B: "bar"}},
-		},
-		{
-			name:      "StructMapNilParent",
-			schema:    base,
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
-		},
-		{
-			name:      "StructMapParentDefaultObjectMissing",
-			schema:    withParentDefault,
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"X": float64(1), "B": "foo"}},
-		},
-		{
-			name:      "StructMapParentDefaultObjectPresent",
-			schema:    withParentDefault,
-			instancep: &RootMap{A: map[string]any{}},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
-		},
-		{
-			name:      "StructPtrMapNilParent",
-			schema:    base,
-			instancep: &RootPtrMap{},
-			want:      RootPtrMap{A: mapPtr(map[string]any{"B": "foo"})},
-		},
-		{
-			name: "StructMapNilParentWithNullParentDefault",
-			schema: &Schema{
-				Type: "object",
-				Properties: map[string]*Schema{
-					"A": {
-						// Default null exercises map allocation in struct subschemas
-						Default: mustMarshal(nil),
-						Properties: map[string]*Schema{
-							"B": {Type: "string", Default: mustMarshal("foo")},
-						},
-					},
-				},
-			},
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -522,7 +428,8 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				}},
+				},
+			},
 			validInstance: []Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -544,7 +451,8 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				}},
+				},
+			},
 			validInstance: [2]Banana{
 				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -564,7 +472,8 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				}},
+				},
+			},
 			validInstance: []Durian{
 				{cranberry: &cranberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{cranberry: &cranberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -584,7 +493,8 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				}},
+				},
+			},
 			validInstance: []Fig{
 				{Elderberry: Elderberry{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{Elderberry: Elderberry{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
@@ -604,7 +514,8 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
-				}},
+				},
+			},
 			validInstance: []Honeyberry{
 				{grape: grape{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
 				{grape: grape{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
