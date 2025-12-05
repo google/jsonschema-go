@@ -676,15 +676,16 @@ func (st *state) resolveDynamicRef(schema *Schema) (*Schema, error) {
 }
 
 // ApplyDefaults modifies an instance by applying the schema's defaults to it. If
-// a schema or sub-schema has a default, then a corresponding zero instance value
+// a schema or sub-schema has a default, then a corresponding missing instance value
 // is set to the default.
 //
 // The JSON Schema specification does not describe how defaults should be interpreted.
 // This method honors defaults only on properties, and only those that are not required.
 // If the instance is a map and the property is missing, the property is added to
 // the map with the default.
-// If the instance is a struct, the field corresponding to the property exists, and
-// its value is zero, the field is set to the default.
+// ApplyDefaults does not support structs, because it cannot know whether a field
+// is missing in the JSON, or was explicitly set to its zero value.
+//
 // ApplyDefaults can panic if a default cannot be assigned to a field.
 //
 // The argument must be a pointer to the instance.
@@ -770,57 +771,7 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 					}
 				}
 			case reflect.Struct:
-				// If there is a default for this property, and the field exists but is zero,
-				// set the field to the default.
-				if subschema.Default != nil && val.IsValid() && val.IsZero() {
-					if err := json.Unmarshal(subschema.Default, val.Addr().Interface()); err != nil {
-						return err
-					}
-					// Recurse into newly set object to apply deeper defaults.
-					if val.Kind() == reflect.Map {
-						if val.IsNil() {
-							val.Set(reflect.MakeMap(val.Type()))
-						}
-						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
-							return err
-						}
-					} else if val.Kind() == reflect.Struct {
-						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
-							return err
-						}
-					}
-				} else if val.IsValid() {
-					// Recurse into existing sub-instance when object-like.
-					switch val.Kind() {
-					case reflect.Map:
-						if val.IsNil() && schemaHasDefaultsInProperties(subschema) {
-							val.Set(reflect.MakeMap(val.Type()))
-						}
-						if !val.IsNil() {
-							if err := st.applyDefaults(val.Addr(), subschema); err != nil {
-								return err
-							}
-						}
-					case reflect.Struct:
-						if err := st.applyDefaults(val.Addr(), subschema); err != nil {
-							return err
-						}
-					case reflect.Pointer:
-						et := val.Type().Elem()
-						if (et.Kind() == reflect.Map || et.Kind() == reflect.Struct) && val.IsNil() && schemaHasDefaultsInProperties(subschema) {
-							nv := reflect.New(et)
-							if et.Kind() == reflect.Map {
-								nv.Elem().Set(reflect.MakeMap(et))
-							}
-							val.Set(nv)
-						}
-						if !val.IsNil() && (et.Kind() == reflect.Map || et.Kind() == reflect.Struct) {
-							if err := st.applyDefaults(val, subschema); err != nil {
-								return err
-							}
-						}
-					}
-				}
+				return errors.New("cannot apply defaults to a struct")
 			default:
 				panic(fmt.Sprintf("applyDefaults: property %s: bad value %s of kind %s",
 					prop, instance, instance.Kind()))
