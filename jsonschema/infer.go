@@ -56,7 +56,7 @@ type ForOptions struct {
 //     schema for additionalProperties.
 //   - Structs have schema type "object", and disallow additionalProperties.
 //     Their properties are derived from exported struct fields, using the
-//     struct field JSON name. Fields that are marked "omitempty" are
+//     struct field JSON name. Fields that are marked "omitempty" or "omitzero" are
 //     considered optional; all other fields become required properties.
 //     For structs, the PropertyOrder will be set to the field order.
 //   - Some types in the standard library that implement json.Marshaler
@@ -217,11 +217,19 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		}
 
 	case reflect.Slice, reflect.Array:
-		s.Type = "array"
-		s.Items, err = forType(t.Elem(), seen, ignore, schemas)
+		if os.Getenv(debugEnv) != "typeschemasnull=1" && t.Kind() == reflect.Slice {
+			s.Types = []string{"null", "array"}
+		} else {
+			s.Type = "array"
+		}
+		itemsSchema, err := forType(t.Elem(), seen, ignore, schemas)
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
+		if itemsSchema == nil {
+			return nil, nil
+		}
+		s.Items = itemsSchema
 		if ignore && s.Items == nil {
 			// Ignore if the element type is invalid.
 			return nil, nil

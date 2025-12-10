@@ -8,12 +8,161 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
+
+func TestMarshalJSONConsistency(t *testing.T) {
+	// Test that MarshalJSON with value receiver ensures consistent JSON encoding
+	// regardless of how Schema is stored (fixes golang/go#22967, golang/go#33993, golang/go#55890)
+
+	// Create a test schema
+	testSchema := Schema{
+		Type:      "object",
+		MinLength: Ptr(10),
+		Properties: map[string]*Schema{
+			"name": {Type: "string"},
+			"age":  {Type: "integer"},
+		},
+		Required: []string{"name"},
+	}
+
+	// Expected JSON output
+	expectedJSON, err := json.Marshal(testSchema)
+	if err != nil {
+		t.Fatalf("Failed to marshal expected schema: %v", err)
+	}
+
+	if !strings.Contains(string(expectedJSON), "object") {
+		t.Fatalf("Expected JSON does not contain 'object': %s", string(expectedJSON))
+	}
+
+	t.Run("DirectValue", func(t *testing.T) {
+		// Test direct value marshaling
+		got, err := json.Marshal(testSchema)
+		if err != nil {
+			t.Fatalf("Failed to marshal direct value: %v", err)
+		}
+		if string(got) != string(expectedJSON) {
+			t.Errorf("Direct value marshaling mismatch\ngot:  %s\nwant: %s", got, expectedJSON)
+		}
+	})
+
+	t.Run("Pointer", func(t *testing.T) {
+		// Test pointer marshaling
+		schemaPtr := &testSchema
+		got, err := json.Marshal(schemaPtr)
+		if err != nil {
+			t.Fatalf("Failed to marshal pointer: %v", err)
+		}
+		if string(got) != string(expectedJSON) {
+			t.Errorf("Pointer marshaling mismatch\ngot:  %s\nwant: %s", got, expectedJSON)
+		}
+	})
+
+	t.Run("MapValue", func(t *testing.T) {
+		// Test marshaling when stored as map value (non-addressable)
+		// This is a key case that fails with pointer receiver
+		schemaMap := map[string]Schema{
+			"test": testSchema,
+		}
+		got, err := json.Marshal(schemaMap["test"])
+		if err != nil {
+			t.Fatalf("Failed to marshal map value: %v", err)
+		}
+		if string(got) != string(expectedJSON) {
+			t.Errorf("Map value marshaling mismatch\ngot:  %s\nwant: %s", got, expectedJSON)
+		}
+	})
+
+	t.Run("MapWithSchemaValues", func(t *testing.T) {
+		// Test marshaling a map containing Schema values
+		schemaMap := map[string]Schema{
+			"schema1": testSchema,
+			"schema2": {Type: "string"},
+		}
+		got, err := json.Marshal(schemaMap)
+		if err != nil {
+			t.Fatalf("Failed to marshal map with Schema values: %v", err)
+		}
+
+		// Verify the map marshals correctly
+		var result map[string]json.RawMessage
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("Failed to unmarshal result: %v", err)
+		}
+
+		// Check that schema1 matches expected
+		if string(result["schema1"]) != string(expectedJSON) {
+			t.Errorf("Map schema1 marshaling mismatch\ngot:  %s\nwant: %s", result["schema1"], expectedJSON)
+		}
+	})
+
+	t.Run("SliceElement", func(t *testing.T) {
+		// Test marshaling when stored in a slice
+		schemas := []Schema{testSchema}
+		gotSlice, err := json.Marshal(schemas)
+		if err != nil {
+			t.Fatalf("Failed to marshal slice: %v", err)
+		}
+
+		var unmarshaledSlice []json.RawMessage
+		if err := json.Unmarshal(gotSlice, &unmarshaledSlice); err != nil {
+			t.Fatalf("Failed to unmarshal slice: %v", err)
+		}
+
+		if len(unmarshaledSlice) != 1 || string(unmarshaledSlice[0]) != string(expectedJSON) {
+			t.Errorf("Slice element marshaling mismatch\ngot:  %s\nwant: %s",
+				unmarshaledSlice[0], expectedJSON)
+		}
+	})
+
+	t.Run("StructField", func(t *testing.T) {
+		// Test marshaling when embedded in another struct
+		type Container struct {
+			Schema Schema `json:"schema"`
+			Name   string `json:"name"`
+		}
+
+		container := Container{
+			Schema: testSchema,
+			Name:   "test",
+		}
+
+		got, err := json.Marshal(container)
+		if err != nil {
+			t.Fatalf("Failed to marshal struct with Schema field: %v", err)
+		}
+
+		var result map[string]json.RawMessage
+		if err := json.Unmarshal(got, &result); err != nil {
+			t.Fatalf("Failed to unmarshal struct result: %v", err)
+		}
+
+		if string(result["schema"]) != string(expectedJSON) {
+			t.Errorf("Struct field marshaling mismatch\ngot:  %s\nwant: %s",
+				result["schema"], expectedJSON)
+		}
+	})
+
+	t.Run("InterfaceValue", func(t *testing.T) {
+		// Test marshaling when stored as interface{}
+		var iface any = testSchema
+		got, err := json.Marshal(iface)
+		if err != nil {
+			t.Fatalf("Failed to marshal interface value: %v", err)
+		}
+		if string(got) != string(expectedJSON) {
+			t.Errorf("Interface value marshaling mismatch\ngot:  %s\nwant: %s", got, expectedJSON)
+		}
+	})
+}
 
 func TestGoRoundTrip(t *testing.T) {
 	// Verify that Go representations round-trip.
@@ -221,5 +370,55 @@ func TestCloneSchemas(t *testing.T) {
 	// s1's original schemas should be intact.
 	if s1.Contains != ss1 || s1.PrefixItems[0] != ss2 || s1.PrefixItems[1] != ss3 || ss5.Contains != ss4 || s1.Properties["a"] != ss5 {
 		t.Errorf("s1 modified")
+	}
+}
+
+func TestCloneMarshalDraft2020_12(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft2020-12/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testCloneMarshalValidate(t, files, "")
+}
+
+func TestCloneMarshalDraft7(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft7/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testCloneMarshalValidate(t, files, "https://json-schema.org/draft-07/schema#")
+}
+
+func testCloneMarshalValidate(t *testing.T, files []string, draft string) {
+	for _, file := range files {
+		base := filepath.Base(file)
+		t.Run(base, func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var groups []testGroup
+			if err := json.Unmarshal(data, &groups); err != nil {
+				t.Fatal(err)
+			}
+			for _, g := range groups {
+				t.Run(g.Description, func(t *testing.T) {
+					if g.Schema.Schema == "" {
+						g.Schema.Schema = draft
+					}
+					original := g.Schema.json()
+					clone := g.Schema.CloneSchemas()
+					if diff := cmp.Diff(original, clone.json()); diff != "" {
+						t.Fatalf("Schema mismatch (-want +got):\n%s", diff)
+					}
+				})
+			}
+		})
 	}
 }

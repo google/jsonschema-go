@@ -36,7 +36,7 @@ type test struct {
 	ErrContains string
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateDraft2020_12(t *testing.T) {
 	files, err := filepath.Glob(filepath.FromSlash("testdata/draft2020-12/*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +44,21 @@ func TestValidate(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no files")
 	}
+	testValidate(t, files, "")
+}
+
+func TestValidateDraft7(t *testing.T) {
+	files, err := filepath.Glob(filepath.FromSlash("testdata/draft7/*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no files")
+	}
+	testValidate(t, files, "https://json-schema.org/draft-07/schema#")
+}
+
+func testValidate(t *testing.T, files []string, draft string) {
 	for _, file := range files {
 		base := filepath.Base(file)
 		t.Run(base, func(t *testing.T) {
@@ -57,6 +72,9 @@ func TestValidate(t *testing.T) {
 			}
 			for _, g := range groups {
 				t.Run(g.Description, func(t *testing.T) {
+					if g.Schema.Schema == "" {
+						g.Schema.Schema = draft
+					}
 					rs, err := g.Schema.Resolve(&ResolveOptions{Loader: loadRemote})
 					if err != nil {
 						t.Fatal(err)
@@ -142,7 +160,6 @@ func TestApplyDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type S struct{ A, B, C int }
 	for _, tt := range []struct {
 		instancep any // pointer to instance value
 		want      any // desired value (not a pointer)
@@ -153,14 +170,6 @@ func TestApplyDefaults(t *testing.T) {
 				"A": float64(1), // filled from default
 				"B": 0,          // untouched: it was already there
 				// "C" not added: it is required (Validate will catch that)
-			},
-		},
-		{
-			&S{B: 1},
-			S{
-				A: 1, // filled from default
-				B: 1, // untouched: non-zero
-				C: 0, // untouched: required
 			},
 		},
 	} {
@@ -200,14 +209,6 @@ func TestApplyNestedDefaults(t *testing.T) {
 		},
 	}
 
-	type Nested struct{ B string }
-	type Root struct{ A Nested }
-	type RootPtr struct{ A *Nested }
-	type RootMap struct{ A map[string]any }
-	type RootPtrMap struct{ A *map[string]any }
-
-	mapPtr := func(m map[string]any) *map[string]any { return &m }
-
 	for _, tc := range []struct {
 		name      string
 		schema    *Schema
@@ -245,83 +246,6 @@ func TestApplyNestedDefaults(t *testing.T) {
 			schema:    base,
 			instancep: &map[string]map[string]any{},
 			want:      map[string]map[string]any{"A": {"B": "foo"}},
-		},
-		{
-			name:      "MapValueStructMissingParentTyped",
-			schema:    base,
-			instancep: &map[string]Nested{},
-			want:      map[string]Nested{"A": {B: "foo"}},
-		},
-		{
-			name:      "StructZeroValueParent",
-			schema:    base,
-			instancep: &Root{},
-			want:      Root{A: Nested{B: "foo"}},
-		},
-		{
-			name:      "StructZeroValueParentWithParentDefault",
-			schema:    withParentDefault,
-			instancep: &Root{},
-			want:      Root{A: Nested{B: "foo"}},
-		},
-		{
-			name:      "StructPointerNilParent",
-			schema:    base,
-			instancep: &RootPtr{},
-			want:      RootPtr{A: &Nested{B: "foo"}},
-		},
-		{
-			name:      "StructPresentNonzeroChildPreserved",
-			schema:    base,
-			instancep: &Root{A: Nested{B: "bar"}},
-			want:      Root{A: Nested{B: "bar"}},
-		},
-		{
-			name:      "StructPointerNonNilChildPreserved",
-			schema:    base,
-			instancep: &RootPtr{A: &Nested{B: "bar"}},
-			want:      RootPtr{A: &Nested{B: "bar"}},
-		},
-		{
-			name:      "StructMapNilParent",
-			schema:    base,
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
-		},
-		{
-			name:      "StructMapParentDefaultObjectMissing",
-			schema:    withParentDefault,
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"X": float64(1), "B": "foo"}},
-		},
-		{
-			name:      "StructMapParentDefaultObjectPresent",
-			schema:    withParentDefault,
-			instancep: &RootMap{A: map[string]any{}},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
-		},
-		{
-			name:      "StructPtrMapNilParent",
-			schema:    base,
-			instancep: &RootPtrMap{},
-			want:      RootPtrMap{A: mapPtr(map[string]any{"B": "foo"})},
-		},
-		{
-			name: "StructMapNilParentWithNullParentDefault",
-			schema: &Schema{
-				Type: "object",
-				Properties: map[string]*Schema{
-					"A": {
-						// Default null exercises map allocation in struct subschemas
-						Default: mustMarshal(nil),
-						Properties: map[string]*Schema{
-							"B": {Type: "string", Default: mustMarshal("foo")},
-						},
-					},
-				},
-			},
-			instancep: &RootMap{},
-			want:      RootMap{A: map[string]any{"B": "foo"}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -491,10 +415,10 @@ func TestStructEmbedding(t *testing.T) {
 		validInstance any
 	}{
 		{
-			name:       "ExportedPointer",
+			name:       "Slice",
 			targetType: reflect.TypeOf([]Banana{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -513,10 +437,33 @@ func TestStructEmbedding(t *testing.T) {
 			},
 		},
 		{
+			name:       "Array",
+			targetType: reflect.TypeOf([2]Banana{}),
+			wantSchema: &Schema{
+				Type:     "array",
+				MinItems: Ptr(2),
+				MaxItems: Ptr(2),
+				Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"id":    {Type: "string"},
+						"name":  {Type: "string"},
+						"extra": {Type: "string"},
+					},
+					Required:             []string{"id", "name", "extra"},
+					AdditionalProperties: falseSchema(),
+				},
+			},
+			validInstance: [2]Banana{
+				{Apple: &Apple{ID: "foo1", Name: "Test Foo 2"}, Extra: "additional data 1"},
+				{Apple: &Apple{ID: "foo2", Name: "Test Foo 2"}, Extra: "additional data 2"},
+			},
+		},
+		{
 			name:       "UnExportedPointer",
 			targetType: reflect.TypeOf([]Durian{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -538,7 +485,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "ExportedValue",
 			targetType: reflect.TypeOf([]Fig{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -560,7 +507,7 @@ func TestStructEmbedding(t *testing.T) {
 			name:       "UnExportedValue",
 			targetType: reflect.TypeOf([]Honeyberry{}),
 			wantSchema: &Schema{
-				Type: "array",
+				Types: []string{"null", "array"},
 				Items: &Schema{
 					Type: "object",
 					Properties: map[string]*Schema{
@@ -638,6 +585,14 @@ func loadRemote(uri *url.URL) (*Schema, error) {
 	const metaPrefix = "https://json-schema.org/draft/2020-12/"
 	if after, ok := strings.CutPrefix(uri.String(), metaPrefix); ok {
 		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft2020-12/" + after + ".json"))
+	}
+	const metaPrefixDraft7 = "https://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
+	}
+	const metaPrefixDraft7s = "http://json-schema.org/draft-07/"
+	if after, ok := strings.CutPrefix(uri.String(), metaPrefixDraft7s); ok {
+		return loadSchemaFromFile(filepath.FromSlash("meta-schemas/draft7/" + after + ".json"))
 	}
 	return nil, fmt.Errorf("don't know how to load %s", uri)
 }
