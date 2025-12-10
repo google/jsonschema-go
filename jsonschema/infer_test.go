@@ -339,11 +339,11 @@ func TestForTypeWithDifferentOrder(t *testing.T) {
 			"I": {Type: "integer"},
 			"C": {Type: "custom"},
 			"G": {Type: "integer"},
-			"B": {Type: "integer"},
+			"B": {Type: "boolean"},
 		},
 		Required:             []string{"I", "C", "B"},
 		AdditionalProperties: falseSchema(),
-		PropertyOrder:        []string{"I", "C", "G", "B"},
+		PropertyOrder:        []string{"I", "C", "B", "G"},
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
 		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
@@ -353,7 +353,7 @@ func TestForTypeWithDifferentOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantStr := `{"type":"object","properties":{"I":{"type":"integer"},"C":{"type":"custom"},"G":{"type":"integer"},"B":{"type":"integer"}},"required":["I","C","B"],"additionalProperties":false}`
+	wantStr := `{"type":"object","properties":{"I":{"type":"integer"},"C":{"type":"custom"},"B":{"type":"boolean"},"G":{"type":"integer"}},"required":["I","C","B"],"additionalProperties":false}`
 	if diff := cmp.Diff(wantStr, string(gotBytes), cmpopts.IgnoreUnexported(schema{})); diff != "" {
 		t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
 	}

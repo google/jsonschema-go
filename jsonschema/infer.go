@@ -58,6 +58,7 @@ type ForOptions struct {
 //     Their properties are derived from exported struct fields, using the
 //     struct field JSON name. Fields that are marked "omitempty" are
 //     considered optional; all other fields become required properties.
+//     For structs, the PropertyOrder will be set to the field order.
 //   - Some types in the standard library that implement json.Marshaler
 //     translate to schemas that match the values to which they marshal.
 //     For example, [time.Time] translates to the schema for strings.
@@ -242,6 +243,9 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		// schema has been replaced by a known schema.
 		var skipPath []int
 		for _, field := range reflect.VisibleFields(t) {
+			if s.Properties == nil {
+				s.Properties = make(map[string]*Schema)
+			}
 			if field.Anonymous {
 				override := schemas[field.Type]
 				if override != nil {
@@ -264,8 +268,10 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 					skipPath = field.Index
 					for name, prop := range override.Properties {
-						s.Properties[name] = prop.CloneSchemas()
-						s.PropertyOrder = append(s.PropertyOrder, name)
+						if _, ok := s.Properties[name]; !ok {
+							s.Properties[name] = prop.CloneSchemas()
+							s.PropertyOrder = append(s.PropertyOrder, name)
+						}
 					}
 				}
 				continue
@@ -298,9 +304,6 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			info := fieldJSONInfo(field)
 			if info.omit {
 				continue
-			}
-			if s.Properties == nil {
-				s.Properties = make(map[string]*Schema)
 			}
 			fs, err := forType(field.Type, seen, ignore, schemas)
 			if err != nil {
@@ -345,9 +348,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 			// Since we collected them backwards, we need to reverse the result
 			// to restore the correct order.
-			for i, j := 0, len(cleaned)-1; i < j; i, j = i+1, j-1 {
-				cleaned[i], cleaned[j] = cleaned[j], cleaned[i]
-			}
+			slices.Reverse(cleaned)
 			s.PropertyOrder = cleaned
 		}
 

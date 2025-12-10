@@ -133,7 +133,7 @@ type Schema struct {
 	//
 	// If PropertyOrder is set, it controls the relative ordering of properties in [Schema.MarshalJSON].
 	// The rendered JSON first lists any properties that appear in the PropertyOrder slice in the order
-	// they appear, followed by any properties that do not appear in the PropertyOrder slice in an
+	// they appear, followed by all other properties that do not appear in the PropertyOrder slice in an
 	// undefined but deterministic order.
 	PropertyOrder []string `json:"-"`
 }

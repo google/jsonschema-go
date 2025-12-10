@@ -126,16 +126,26 @@ func TestMarshalOrder(t *testing.T) {
 		order []string
 		want  string
 	}{
-		{[]string{"A", "B", "C", "D"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"}}}`},
-		{[]string{"A", "C", "B", "D"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"D":{"type":"integer"}}}`},
-		{[]string{"D", "C", "B", "A"},
-			`{"type":"object","properties":{"D":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"A":{"type":"integer"}}}`},
-		{[]string{"A", "B", "C"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"}}}`},
-		{[]string{"A", "B", "C", "D", "D"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"D":{"type":"integer"}}}`},
+		{
+			[]string{"A", "B", "C", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+		},
+		{
+			[]string{"A", "C", "B", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+		},
+		{
+			[]string{"D", "C", "B", "A"},
+			`{"type":"object","properties":{"D":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"A":{"type":"integer"},"E":{"type":"integer"}}}`,
+		},
+		{
+			[]string{"A", "B", "C"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`, // flaky
+		},
+		{
+			[]string{"A", "B", "C", "D", "D"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+		},
 	} {
 		s := &Schema{
 			Type: "object",
@@ -144,6 +154,7 @@ func TestMarshalOrder(t *testing.T) {
 				"B": {Type: "integer"},
 				"C": {Type: "integer"},
 				"D": {Type: "integer"},
+				"E": {Type: "integer"},
 			},
 		}
 		s.PropertyOrder = tt.order
