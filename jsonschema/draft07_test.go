@@ -474,7 +474,7 @@ func TestDraft07Marshalling(t *testing.T) {
 		{
 			name:     "draft-07 dependencies marshalling complex",
 			input:    `{"dependencies": {"name": ["first", "last"],"billing_address": {"required": ["shipping_address"],"properties": {"user_role": { "enum": ["preferred", "standard"] }}}}}`,
-			expected: `{"dependencies":{"billing_address":{"required":["shipping_address"],"properties":{"user_role":{"enum":["preferred","standard"]}}},"name":["first","last"]}}`,
+			expected: `{"dependencies":{"billing_address":{"properties":{"user_role":{"enum":["preferred","standard"]}},"required":["shipping_address"]},"name":["first","last"]}}`,
 		},
 		{
 			name:     "draft-07 definitions marshalling",

@@ -354,6 +354,9 @@ func (op orderedProperties) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	// Sort the slice alphabetically
+	slices.Sort(remaining)
+
 	for _, name := range remaining {
 		if err := writeEntry(name, op.props[name]); err != nil {
 			return nil, err

@@ -452,6 +452,7 @@ func TestStructEmbedding(t *testing.T) {
 					},
 					Required:             []string{"id", "name", "extra"},
 					AdditionalProperties: falseSchema(),
+					PropertyOrder:        []string{"id", "name", "extra"},
 				},
 			},
 			validInstance: [2]Banana{
