@@ -311,7 +311,7 @@ func TestMarshalOrder(t *testing.T) {
 			[]string{"A", "B", "C", "D", "D"},
 			"",
 			true,
-			"json: error calling MarshalJSON for type *jsonschema.Schema: property order slice cannot contain duplicate entries. found duplicate \"D\"",
+			"json: error calling MarshalJSON for type *jsonschema.Schema: property order slice cannot contain duplicate entries, found duplicate \"D\"",
 		},
 	} {
 		s := &Schema{
