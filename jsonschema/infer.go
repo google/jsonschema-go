@@ -36,6 +36,7 @@ type ForOptions struct {
 	// ensure uniqueness).
 	// Types in this map override the default translations, as described
 	// in [For]'s documentation.
+	// PropertyOrder defined in these schemas will not be used in [For]
 	TypeSchemas map[reflect.Type]*Schema
 }
 
@@ -58,6 +59,7 @@ type ForOptions struct {
 //     Their properties are derived from exported struct fields, using the
 //     struct field JSON name. Fields that are marked "omitempty" or "omitzero" are
 //     considered optional; all other fields become required properties.
+//     For structs, the PropertyOrder will be set to the field order.
 //   - Some types in the standard library that implement json.Marshaler
 //     translate to schemas that match the values to which they marshal.
 //     For example, [time.Time] translates to the schema for strings.
@@ -250,6 +252,9 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		// schema has been replaced by a known schema.
 		var skipPath []int
 		for _, field := range reflect.VisibleFields(t) {
+			if s.Properties == nil {
+				s.Properties = make(map[string]*Schema)
+			}
 			if field.Anonymous {
 				override := schemas[field.Type]
 				if override != nil {
@@ -271,8 +276,16 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 					}
 
 					skipPath = field.Index
-					for name, prop := range override.Properties {
-						s.Properties[name] = prop.CloneSchemas()
+					keys := make([]string, 0, len(override.Properties))
+					for k := range override.Properties {
+						keys = append(keys, k)
+					}
+					slices.Sort(keys)
+					for _, name := range keys {
+						if _, ok := s.Properties[name]; !ok {
+							s.Properties[name] = override.Properties[name].CloneSchemas()
+							s.PropertyOrder = append(s.PropertyOrder, name)
+						}
 					}
 				}
 				continue
@@ -306,9 +319,6 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			if info.omit {
 				continue
 			}
-			if s.Properties == nil {
-				s.Properties = make(map[string]*Schema)
-			}
 			fs, err := forType(field.Type, seen, ignore, schemas)
 			if err != nil {
 				return nil, err
@@ -327,9 +337,33 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 				fs.Description = tag
 			}
 			s.Properties[info.name] = fs
+
+			s.PropertyOrder = append(s.PropertyOrder, info.name)
+
 			if !info.settings["omitempty"] && !info.settings["omitzero"] {
 				s.Required = append(s.Required, info.name)
 			}
+		}
+
+		// Remove PropertyOrder duplicates, keeping the last occurrence
+		if len(s.PropertyOrder) > 1 {
+			seen := make(map[string]bool)
+			// Create a slice to hold the cleaned order (capacity = current length)
+			cleaned := make([]string, 0, len(s.PropertyOrder))
+
+			// Iterate backwards
+			for i := len(s.PropertyOrder) - 1; i >= 0; i-- {
+				name := s.PropertyOrder[i]
+				if !seen[name] {
+					cleaned = append(cleaned, name)
+					seen[name] = true
+				}
+			}
+
+			// Since we collected them backwards, we need to reverse the result
+			// to restore the correct order.
+			slices.Reverse(cleaned)
+			s.PropertyOrder = cleaned
 		}
 
 	default:
