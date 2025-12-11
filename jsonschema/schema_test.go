@@ -272,28 +272,46 @@ func TestUnmarshalErrors(t *testing.T) {
 
 func TestMarshalOrder(t *testing.T) {
 	for _, tt := range []struct {
-		order []string
-		want  string
+		order      []string
+		want       string
+		wantErr    bool
+		errMessage string
 	}{
 		{
 			[]string{"A", "B", "C", "D"},
 			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+			false,
+			"",
 		},
 		{
 			[]string{"A", "C", "B", "D"},
 			`{"type":"object","properties":{"A":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+			false,
+			"",
 		},
 		{
 			[]string{"D", "C", "B", "A"},
 			`{"type":"object","properties":{"D":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"A":{"type":"integer"},"E":{"type":"integer"}}}`,
+			false,
+			"",
 		},
 		{
 			[]string{"A", "B", "C"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`, // flaky
+			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+			false,
+			"",
+		},
+		{
+			[]string{"A", "E", "C"},
+			`{"type":"object","properties":{"A":{"type":"integer"},"E":{"type":"integer"},"C":{"type":"integer"},"B":{"type":"integer"},"D":{"type":"integer"}}}`,
+			false,
+			"",
 		},
 		{
 			[]string{"A", "B", "C", "D", "D"},
-			`{"type":"object","properties":{"A":{"type":"integer"},"B":{"type":"integer"},"C":{"type":"integer"},"D":{"type":"integer"},"D":{"type":"integer"},"E":{"type":"integer"}}}`,
+			"",
+			true,
+			"json: error calling MarshalJSON for type *jsonschema.Schema: property order slice cannot contain duplicate entries. found duplicate \"D\"",
 		},
 	} {
 		s := &Schema{
@@ -309,7 +327,13 @@ func TestMarshalOrder(t *testing.T) {
 		s.PropertyOrder = tt.order
 		gotBytes, err := json.Marshal(s)
 		if err != nil {
-			t.Fatal(err)
+			if !tt.wantErr {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.errMessage, err.Error()); diff != "" {
+				t.Fatalf("error message mismatch (-want +got):\n%s", diff)
+			}
+			continue
 		}
 		if diff := cmp.Diff(tt.want, string(gotBytes), cmpopts.IgnoreUnexported(Schema{})); diff != "" {
 			t.Fatalf("ForType mismatch (-want +got):\n%s", diff)

@@ -213,6 +213,15 @@ func (s *Schema) basicChecks() error {
 	if s.Items != nil && s.ItemsArray != nil {
 		return errors.New("both Items and ItemsArray are set; at most one should be")
 	}
+	propertyOrderSeen := make(map[string]bool)
+	for _, val := range s.PropertyOrder {
+		if _, ok := propertyOrderSeen[val]; ok {
+			// Duplicate found
+			return fmt.Errorf("property order slice cannot contain duplicate entries, found duplicate %q", val)
+		}
+		propertyOrderSeen[val] = true
+	}
+
 	for key := range s.DependencySchemas {
 		// Check if the key exists in the dependency strings map
 		if _, exists := s.DependencyStrings[key]; exists {

@@ -361,6 +361,171 @@ func TestForTypeWithDifferentOrder(t *testing.T) {
 	}
 }
 
+func TestForTypeWithEmbeddedStruct(t *testing.T) {
+	// This tests embedded structs with a custom schema in addition to ForType.
+	type schema = jsonschema.Schema
+
+	type E struct {
+		G float64 // promoted into S
+		B int     // promoted into S
+		I int     // promoted into S
+	}
+
+	type S struct {
+		F func()
+		C custom
+		E
+	}
+
+	type S1 struct {
+		F func()
+		C custom
+		E
+		M int
+	}
+
+	type test struct {
+		name        string
+		convertType reflect.Type
+		opts        *jsonschema.ForOptions
+		want        *jsonschema.Schema
+		wantStr     string
+	}
+
+	tests := []test{
+		{
+			name:        "Embedded without override",
+			convertType: reflect.TypeOf(S{}),
+			opts: &jsonschema.ForOptions{
+				IgnoreInvalidTypes: true,
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[custom](): {Type: "custom"},
+				},
+			},
+			want: &schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"C": {Type: "custom"},
+					"G": {Type: "number"},
+					"B": {Type: "integer"},
+					"I": {Type: "integer"},
+				},
+				Required:             []string{"C", "G", "B", "I"},
+				AdditionalProperties: falseSchema(),
+				PropertyOrder:        []string{"C", "G", "B", "I"},
+			},
+			wantStr: `{"type":"object","properties":{"C":{"type":"custom"},"G":{"type":"number"},"B":{"type":"integer"},"I":{"type":"integer"}},"required":["C","G","B","I"],"additionalProperties":false}`,
+		},
+		{
+			name:        "Embedded with overwrite",
+			convertType: reflect.TypeOf(S{}),
+			opts: &jsonschema.ForOptions{
+				IgnoreInvalidTypes: true,
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[custom](): {Type: "custom"},
+					reflect.TypeFor[E](): {
+						Type: "object",
+						Properties: map[string]*schema{
+							"G": {Type: "integer"},
+							"B": {Type: "integer"},
+							"I": {Type: "integer"},
+						},
+					},
+				},
+			},
+			want: &schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"C": {Type: "custom"},
+					"G": {Type: "integer"},
+					"B": {Type: "integer"},
+					"I": {Type: "integer"},
+				},
+				Required:             []string{"C"},
+				AdditionalProperties: falseSchema(),
+				PropertyOrder:        []string{"C", "B", "G", "I"},
+			},
+			wantStr: `{"type":"object","properties":{"C":{"type":"custom"},"B":{"type":"integer"},"G":{"type":"integer"},"I":{"type":"integer"}},"required":["C"],"additionalProperties":false}`,
+		},
+		{
+			name:        "Embedded in the middle without overwrite",
+			convertType: reflect.TypeOf(S1{}),
+			opts: &jsonschema.ForOptions{
+				IgnoreInvalidTypes: true,
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[custom](): {Type: "custom"},
+				},
+			},
+			want: &schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"C": {Type: "custom"},
+					"G": {Type: "number"},
+					"B": {Type: "integer"},
+					"I": {Type: "integer"},
+					"M": {Type: "integer"},
+				},
+				Required:             []string{"C", "G", "B", "I", "M"},
+				AdditionalProperties: falseSchema(),
+				PropertyOrder:        []string{"C", "G", "B", "I", "M"},
+			},
+			wantStr: `{"type":"object","properties":{"C":{"type":"custom"},"G":{"type":"number"},"B":{"type":"integer"},"I":{"type":"integer"},"M":{"type":"integer"}},"required":["C","G","B","I","M"],"additionalProperties":false}`,
+		},
+		{
+			name:        "Embedded in the middle with overwrite",
+			convertType: reflect.TypeOf(S1{}),
+			opts: &jsonschema.ForOptions{
+				IgnoreInvalidTypes: true,
+				TypeSchemas: map[reflect.Type]*schema{
+					reflect.TypeFor[custom](): {Type: "custom"},
+					reflect.TypeFor[E](): {
+						Type: "object",
+						Properties: map[string]*schema{
+							"G": {Type: "integer"},
+							"B": {Type: "integer"},
+							"I": {Type: "integer"},
+						},
+					},
+				},
+			},
+			want: &schema{
+				Type: "object",
+				Properties: map[string]*schema{
+					"C": {Type: "custom"},
+					"G": {Type: "integer"},
+					"B": {Type: "integer"},
+					"I": {Type: "integer"},
+					"M": {Type: "integer"},
+				},
+				Required:             []string{"C", "M"},
+				AdditionalProperties: falseSchema(),
+				PropertyOrder:        []string{"C", "B", "G", "I", "M"},
+			},
+			wantStr: `{"type":"object","properties":{"C":{"type":"custom"},"B":{"type":"integer"},"G":{"type":"integer"},"I":{"type":"integer"},"M":{"type":"integer"}},"required":["C","M"],"additionalProperties":false}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := jsonschema.ForType(tt.convertType, tt.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(schema{})); diff != "" {
+				t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+			}
+			gotBytes, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tt.wantStr, string(gotBytes), cmpopts.IgnoreUnexported(schema{})); diff != "" {
+				t.Fatalf("ForType mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestCustomEmbeddedError(t *testing.T) {
 	// Disallow anything but "type" and "properties".
 	type schema = jsonschema.Schema

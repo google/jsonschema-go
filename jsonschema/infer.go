@@ -36,6 +36,7 @@ type ForOptions struct {
 	// ensure uniqueness).
 	// Types in this map override the default translations, as described
 	// in [For]'s documentation.
+	// PropertyOrder defined in these schemas will not be used in [For]
 	TypeSchemas map[reflect.Type]*Schema
 }
 
@@ -275,9 +276,14 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 					}
 
 					skipPath = field.Index
-					for name, prop := range override.Properties {
+					keys := make([]string, 0, len(override.Properties))
+					for k := range override.Properties {
+						keys = append(keys, k)
+					}
+					slices.Sort(keys)
+					for _, name := range keys {
 						if _, ok := s.Properties[name]; !ok {
-							s.Properties[name] = prop.CloneSchemas()
+							s.Properties[name] = override.Properties[name].CloneSchemas()
 							s.PropertyOrder = append(s.PropertyOrder, name)
 						}
 					}
