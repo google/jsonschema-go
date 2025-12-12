@@ -36,7 +36,7 @@ type ForOptions struct {
 	// ensure uniqueness).
 	// Types in this map override the default translations, as described
 	// in [For]'s documentation.
-	// PropertyOrder defined in these schemas will not be used in [For]
+	// PropertyOrder defined in these schemas will not be used in [For] or [ForType].
 	TypeSchemas map[reflect.Type]*Schema
 }
 
