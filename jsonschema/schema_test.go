@@ -162,6 +162,19 @@ func TestMarshalJSONConsistency(t *testing.T) {
 			t.Errorf("Interface value marshaling mismatch\ngot:  %s\nwant: %s", got, expectedJSON)
 		}
 	})
+
+	t.Run("EmptyPropertiesMap", func(t *testing.T) {
+		// Test that an empty map in Properties marshals as "{}".
+		s := &Schema{Type: "object", Properties: map[string]*Schema{}}
+		got, err := json.Marshal(s)
+		if err != nil {
+			t.Fatalf("Failed to marshal interface value: %v", err)
+		}
+		want := `{"type":"object","properties":{}}`
+		if string(got) != want {
+			t.Errorf("\ngot  %s\nwant %s", got, want)
+		}
+	})
 }
 
 func TestGoRoundTrip(t *testing.T) {

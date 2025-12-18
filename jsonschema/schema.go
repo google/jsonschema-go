@@ -101,7 +101,7 @@ type Schema struct {
 	MaxProperties         *int                `json:"maxProperties,omitempty"`
 	Required              []string            `json:"required,omitempty"`
 	DependentRequired     map[string][]string `json:"dependentRequired,omitempty"`
-	Properties            map[string]*Schema  `json:"properties"`
+	Properties            map[string]*Schema  `json:"properties,omitempty"`
 	PatternProperties     map[string]*Schema  `json:"patternProperties,omitempty"`
 	AdditionalProperties  *Schema             `json:"additionalProperties,omitempty"`
 	PropertyNames         *Schema             `json:"propertyNames,omitempty"`
@@ -285,7 +285,8 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 		Items:                items,
 		schemaWithoutMethods: (*schemaWithoutMethods)(&s),
 	}
-	if len(s.Properties) > 0 {
+	// Marshal properties, even if the empty map (but not nil).
+	if s.Properties != nil {
 		ms.Properties = orderedProperties{
 			props: s.Properties,
 			order: s.PropertyOrder,
