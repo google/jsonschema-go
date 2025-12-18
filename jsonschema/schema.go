@@ -101,7 +101,7 @@ type Schema struct {
 	MaxProperties         *int                `json:"maxProperties,omitempty"`
 	Required              []string            `json:"required,omitempty"`
 	DependentRequired     map[string][]string `json:"dependentRequired,omitempty"`
-	Properties            map[string]*Schema  `json:"properties,omitempty"`
+	Properties            map[string]*Schema  `json:"properties"`
 	PatternProperties     map[string]*Schema  `json:"patternProperties,omitempty"`
 	AdditionalProperties  *Schema             `json:"additionalProperties,omitempty"`
 	PropertyNames         *Schema             `json:"propertyNames,omitempty"`
