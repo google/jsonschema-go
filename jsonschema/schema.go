@@ -316,7 +316,9 @@ type orderedProperties struct {
 
 func (op orderedProperties) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteByte('{')
+	if err := buf.WriteByte('{'); err != nil {
+		return nil, err
+	}
 
 	first := true
 	processed := make(map[string]bool, len(op.props))
@@ -373,7 +375,9 @@ func (op orderedProperties) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	buf.WriteByte('}')
+	if err := buf.WriteByte('}'); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
