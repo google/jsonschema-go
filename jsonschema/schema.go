@@ -73,15 +73,17 @@ type Schema struct {
 	Types []string `json:"-"`
 	Enum  []any    `json:"enum,omitempty"`
 	// Const is *any because a JSON null (Go nil) is a valid value.
-	Const            *any     `json:"const,omitempty"`
-	MultipleOf       *float64 `json:"multipleOf,omitempty"`
-	Minimum          *float64 `json:"minimum,omitempty"`
-	Maximum          *float64 `json:"maximum,omitempty"`
-	ExclusiveMinimum *float64 `json:"exclusiveMinimum,omitempty"`
-	ExclusiveMaximum *float64 `json:"exclusiveMaximum,omitempty"`
-	MinLength        *int     `json:"minLength,omitempty"`
-	MaxLength        *int     `json:"maxLength,omitempty"`
-	Pattern          string   `json:"pattern,omitempty"`
+	Const                   *any     `json:"const,omitempty"`
+	MultipleOf              *float64 `json:"multipleOf,omitempty"`
+	Minimum                 *float64 `json:"minimum,omitempty"`
+	Maximum                 *float64 `json:"maximum,omitempty"`
+	ExclusiveMinimum        *float64 `json:"-"` // draft 6 and newer
+	ExclusiveMinimumBoolean *bool    `json:"-"` // draft 5 and older
+	ExclusiveMaximum        *float64 `json:"-"` // draft 6 and newer
+	ExclusiveMaximumBoolean *bool    `json:"-"` // draft 5 and older
+	MinLength               *int     `json:"minLength,omitempty"`
+	MaxLength               *int     `json:"maxLength,omitempty"`
+	Pattern                 string   `json:"pattern,omitempty"`
 
 	// arrays
 	PrefixItems      []*Schema `json:"prefixItems,omitempty"`
@@ -273,16 +275,36 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	var exMin any
+	switch {
+	case s.ExclusiveMinimum != nil:
+		exMin = s.ExclusiveMinimum
+	case s.ExclusiveMinimumBoolean != nil:
+		exMin = s.ExclusiveMinimumBoolean
+	}
+
+	var exMax any
+	switch {
+	case s.ExclusiveMaximum != nil:
+		exMax = s.ExclusiveMaximum
+	case s.ExclusiveMaximumBoolean != nil:
+		exMax = s.ExclusiveMaximumBoolean
+	}
+
 	ms := struct {
-		Type         any            `json:"type,omitempty"`
-		Properties   json.Marshaler `json:"properties,omitempty"`
-		Dependencies map[string]any `json:"dependencies,omitempty"`
-		Items        any            `json:"items,omitempty"`
+		Type             any            `json:"type,omitempty"`
+		Properties       json.Marshaler `json:"properties,omitempty"`
+		Dependencies     map[string]any `json:"dependencies,omitempty"`
+		Items            any            `json:"items,omitempty"`
+		ExclusiveMinimum any            `json:"exclusiveMinimum,omitempty"`
+		ExclusiveMaximum any            `json:"exclusiveMaximum,omitempty"`
 		*schemaWithoutMethods
 	}{
 		Type:                 typ,
 		Dependencies:         dep,
 		Items:                items,
+		ExclusiveMinimum:     exMin,
+		ExclusiveMaximum:     exMax,
 		schemaWithoutMethods: (*schemaWithoutMethods)(&s),
 	}
 	// Marshal properties, even if the empty map (but not nil).
@@ -392,18 +414,20 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	}
 
 	ms := struct {
-		Type          json.RawMessage            `json:"type,omitempty"`
-		Dependencies  map[string]json.RawMessage `json:"dependencies,omitempty"`
-		Items         json.RawMessage            `json:"items,omitempty"`
-		Const         json.RawMessage            `json:"const,omitempty"`
-		MinLength     *integer                   `json:"minLength,omitempty"`
-		MaxLength     *integer                   `json:"maxLength,omitempty"`
-		MinItems      *integer                   `json:"minItems,omitempty"`
-		MaxItems      *integer                   `json:"maxItems,omitempty"`
-		MinProperties *integer                   `json:"minProperties,omitempty"`
-		MaxProperties *integer                   `json:"maxProperties,omitempty"`
-		MinContains   *integer                   `json:"minContains,omitempty"`
-		MaxContains   *integer                   `json:"maxContains,omitempty"`
+		Type             json.RawMessage            `json:"type,omitempty"`
+		Dependencies     map[string]json.RawMessage `json:"dependencies,omitempty"`
+		Items            json.RawMessage            `json:"items,omitempty"`
+		Const            json.RawMessage            `json:"const,omitempty"`
+		ExclusiveMinimum json.RawMessage            `json:"exclusiveMinimum,omitempty"`
+		ExclusiveMaximum json.RawMessage            `json:"exclusiveMaximum,omitempty"`
+		MinLength        *integer                   `json:"minLength,omitempty"`
+		MaxLength        *integer                   `json:"maxLength,omitempty"`
+		MinItems         *integer                   `json:"minItems,omitempty"`
+		MaxItems         *integer                   `json:"maxItems,omitempty"`
+		MinProperties    *integer                   `json:"minProperties,omitempty"`
+		MaxProperties    *integer                   `json:"maxProperties,omitempty"`
+		MinContains      *integer                   `json:"minContains,omitempty"`
+		MaxContains      *integer                   `json:"maxContains,omitempty"`
 
 		*schemaWithoutMethods
 	}{
@@ -471,6 +495,17 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 		}
 	}
 
+	// Unmarshal "exclusiveMinimum" as a float64 or boolean
+	s.ExclusiveMinimum, s.ExclusiveMinimumBoolean, err = unmarshalValueOrBoolean[float64](ms.ExclusiveMinimum)
+	if err != nil {
+		return err
+	}
+	// Unmarshal "exclusiveMaximum" as a float64 or boolean
+	s.ExclusiveMaximum, s.ExclusiveMaximumBoolean, err = unmarshalValueOrBoolean[float64](ms.ExclusiveMaximum)
+	if err != nil {
+		return err
+	}
+
 	unmarshalAnyPtr := func(p **any, raw json.RawMessage) error {
 		if len(raw) == 0 {
 			return nil
@@ -504,6 +539,23 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	set(&s.MaxContains, ms.MaxContains)
 
 	return nil
+}
+
+// unmarshalValueOrBoolean unmarshals JSON into a value of type T or a boolean.
+func unmarshalValueOrBoolean[T any](data []byte) (*T, *bool, error) {
+	switch {
+	case len(data) == 0:
+		return nil, nil, nil
+	case bytes.Equal(data, []byte(`true`)):
+		value := true
+		return nil, &value, nil
+	case bytes.Equal(data, []byte(`false`)):
+		value := false
+		return nil, &value, nil
+	default:
+		var value T
+		return &value, nil, json.Unmarshal(data, &value)
+	}
 }
 
 type integer int32 // for the integer-valued fields of Schema
@@ -617,7 +669,7 @@ func init() {
 		if !info.omit {
 			schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, info.name})
 		} else {
-			// jsoninfo.name is used to build the info paths. The items and dependencies are ommited,
+			// jsoninfo.name is used to build the info paths. The items and dependencies are omitted,
 			// since the original fields are separated to handle the union types supported in json and
 			// these fields have custom marshalling and unmarshalling logic.
 			// we still need these fields in schemaFieldInfos for creating schema trees and calculating paths and refs.
@@ -627,6 +679,10 @@ func init() {
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "items"})
 			case "DependencySchemas", "DependencyStrings":
 				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "dependencies"})
+			case "ExclusiveMinimum", "ExclusiveMinimumBoolean":
+				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "exclusiveMinimum"})
+			case "ExclusiveMaximum", "ExclusiveMaximumBoolean":
+				schemaFieldInfos = append(schemaFieldInfos, structFieldInfo{sf, "exclusiveMaximum"})
 			}
 		}
 	}

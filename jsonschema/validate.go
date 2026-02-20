@@ -166,20 +166,40 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 				}
 			}
 
+			// Initialize optional values for min/max validation
+			var (
+				minValue   = schema.Minimum
+				maxValue   = schema.Maximum
+				exMinValue = schema.ExclusiveMinimum
+				exMaxValue = schema.ExclusiveMaximum
+			)
+
+			// Preserve behavior for draft 5 and older:
+			// Use minimum/maximum as exclusiveMinimum/exclusiveMaximum if exclusiveMinimum/exclusiveMaximum
+			// was set as a boolean.
+			if schema.ExclusiveMinimumBoolean != nil && *schema.ExclusiveMinimumBoolean {
+				minValue = nil              // disable minimum validation
+				exMinValue = schema.Minimum // enable exclusive minimum validation
+			}
+			if schema.ExclusiveMaximumBoolean != nil && *schema.ExclusiveMaximumBoolean {
+				maxValue = nil              // disable maximum validation
+				exMaxValue = schema.Maximum // enable exclusive maximum validation
+			}
+
 			m := new(big.Rat) // reuse for all of the following
 			cmp := func(f float64) int { return n.Cmp(m.SetFloat64(f)) }
 
-			if schema.Minimum != nil && cmp(*schema.Minimum) < 0 {
-				return fmt.Errorf("minimum: %s is less than %f", n, *schema.Minimum)
+			if minValue != nil && cmp(*minValue) < 0 {
+				return fmt.Errorf("minimum: %s is less than %f", n, *minValue)
 			}
-			if schema.Maximum != nil && cmp(*schema.Maximum) > 0 {
-				return fmt.Errorf("maximum: %s is greater than %f", n, *schema.Maximum)
+			if maxValue != nil && cmp(*maxValue) > 0 {
+				return fmt.Errorf("maximum: %s is greater than %f", n, *maxValue)
 			}
-			if schema.ExclusiveMinimum != nil && cmp(*schema.ExclusiveMinimum) <= 0 {
-				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %f", n, *schema.ExclusiveMinimum)
+			if exMinValue != nil && cmp(*exMinValue) <= 0 {
+				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %f", n, *exMinValue)
 			}
-			if schema.ExclusiveMaximum != nil && cmp(*schema.ExclusiveMaximum) >= 0 {
-				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %f", n, *schema.ExclusiveMaximum)
+			if exMaxValue != nil && cmp(*exMaxValue) >= 0 {
+				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %f", n, *exMaxValue)
 			}
 		}
 	}
