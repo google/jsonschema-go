@@ -230,6 +230,12 @@ func (s *Schema) basicChecks() error {
 			return fmt.Errorf("dependency key %q cannot be defined as both a schema and a string array", key)
 		}
 	}
+	if s.ExclusiveMinimum != nil && s.ExclusiveMinimumBoolean != nil {
+		return errors.New("both ExclusiveMinimum and ExclusiveMinimumBoolean are set; at most one should be")
+	}
+	if s.ExclusiveMaximum != nil && s.ExclusiveMaximumBoolean != nil {
+		return errors.New("both ExclusiveMaximum and ExclusiveMaximumBoolean are set; at most one should be")
+	}
 	return nil
 }
 
