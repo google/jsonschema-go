@@ -59,7 +59,7 @@ type Schema struct {
 	Vocabulary    map[string]bool `json:"$vocabulary,omitempty"`
 
 	// metadata
-	Title       string          `json:"title,omitempty"`
+	Title       string          `json:"title"`
 	Description string          `json:"description,omitempty"`
 	Default     json.RawMessage `json:"default,omitempty"`
 	Deprecated  bool            `json:"deprecated,omitempty"`
