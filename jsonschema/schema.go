@@ -140,7 +140,7 @@ type Schema struct {
 	// The rendered JSON first lists any properties that appear in the PropertyOrder slice in the order
 	// they appear, followed by all other properties that do not appear in the PropertyOrder slice in an
 	// undefined but deterministic order.
-	PropertyOrder []string `json:"-"`
+	PropertyOrder []string `json:"x-order,omitempty"`
 }
 
 // falseSchema returns a new Schema tree that fails to validate any value.

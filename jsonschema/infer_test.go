@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/phomola/jsonschema-go/jsonschema"
 )
 
 type custom int
