@@ -723,15 +723,23 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 			if schemaInfo.isRequired[prop] {
 				continue
 			}
+
+			subschemaDefault := subschema.Default
+			subschemaInfo := st.rs.resolvedInfos[subschema]
+
+			if subschemaDefault == nil && subschemaInfo.resolvedRef != nil {
+				subschemaDefault = subschemaInfo.resolvedRef.Default
+			}
+
 			val := property(instance, prop)
 			switch instance.Kind() {
 			case reflect.Map:
 				// If there is a default for this property, and the map key is missing,
 				// set the map value to the default.
-				if subschema.Default != nil && !val.IsValid() {
+				if subschemaDefault != nil && !val.IsValid() {
 					// Create an lvalue, since map values aren't addressable.
 					lvalue := reflect.New(instance.Type().Elem())
-					if err := json.Unmarshal(subschema.Default, lvalue.Interface()); err != nil {
+					if err := json.Unmarshal(subschemaDefault, lvalue.Interface()); err != nil {
 						return err
 					}
 					// Recurse unconditionally; applyDefaults will only act on object-like values.

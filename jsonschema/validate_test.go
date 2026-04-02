@@ -264,6 +264,67 @@ func TestApplyNestedDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyDefaultsInRef(t *testing.T) {
+	schema := &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"A": {Ref: "#/definitions/A"},
+		},
+		Definitions: map[string]*Schema{
+			"A": {
+				Type:    "array",
+				Default: mustMarshal([]any{}),
+			},
+		},
+	}
+	instancep := &map[string]any{}
+	want := map[string]any{"A": []any{}}
+
+	rs, err := schema.Resolve(&ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.ApplyDefaults(instancep); err != nil {
+		t.Fatal(err)
+	}
+	got := reflect.ValueOf(instancep).Elem().Interface()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("defaults in ref:\n got  %#v\n want %#v", got, want)
+	}
+}
+
+func TestApplyDefaultsOverrideRef(t *testing.T) {
+	schema := &Schema{
+		Type: "object",
+		Properties: map[string]*Schema{
+			"A": {
+				Ref:     "#/definitions/A",
+				Default: mustMarshal([]any{1, 2, 3}),
+			},
+		},
+		Definitions: map[string]*Schema{
+			"A": {
+				Type:    "array",
+				Default: mustMarshal([]any{}),
+			},
+		},
+	}
+	instancep := &map[string]any{}
+	want := map[string]any{"A": []any{float64(1), float64(2), float64(3)}}
+
+	rs, err := schema.Resolve(&ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.ApplyDefaults(instancep); err != nil {
+		t.Fatal(err)
+	}
+	got := reflect.ValueOf(instancep).Elem().Interface()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("defaults in ref:\n got  %#v\n want %#v", got, want)
+	}
+}
+
 func TestStructInstance(t *testing.T) {
 	instance := struct {
 		I int
