@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,10 @@ import (
 )
 
 type custom int
+
+func (c custom) MarshalText() ([]byte, error) {
+	return []byte(strconv.FormatInt(int64(c), 10)), nil
+}
 
 func forType[T any](ignore bool) *jsonschema.Schema {
 	var s *jsonschema.Schema
@@ -108,6 +113,10 @@ func TestFor(t *testing.T) {
 			{"anymap", forType[map[string]any](ignore), &schema{
 				Type:                 "object",
 				AdditionalProperties: &schema{},
+			}},
+			{"custommap", forType[map[custom]string](ignore), &schema{
+				Type:                 "object",
+				AdditionalProperties: &schema{Type: "string"},
 			}},
 			{
 				"struct",
