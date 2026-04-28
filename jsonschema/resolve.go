@@ -96,8 +96,8 @@ type resolvedInfo struct {
 	isRequired map[string]bool
 
 	// Compiled regexps.
-	pattern           *regexp.Regexp
-	patternProperties map[*regexp.Regexp]*Schema
+	pattern           Regexp
+	patternProperties map[Regexp]*Schema
 
 	// Map from anchors to subschemas.
 	anchors map[string]anchorInfo
@@ -118,6 +118,19 @@ func (r *Resolved) schemaString(s *Schema) string {
 	}
 	return "<anonymous schema>"
 }
+
+// A Regexp is a compiled regular expression.
+// It is used by the validator to match strings against patterns.
+type Regexp interface {
+	MatchString(s string) bool
+}
+
+// A RegexpCompiler compiles a regular expression pattern string into a [Regexp].
+// The default compiler uses Go's [regexp] package. Provide a custom compiler
+// for Perl-compatible features like lookahead; see the [regexp2 package].
+//
+// [regexp2 package]: https://github.com/dlclark/regexp2
+type RegexpCompiler func(pattern string) (Regexp, error)
 
 // A Loader reads and unmarshals the schema at uri, if any.
 type Loader func(uri *url.URL) (*Schema, error)
@@ -142,6 +155,10 @@ type ResolveOptions struct {
 	//
 	// [JSON Schema specification]: https://json-schema.org/understanding-json-schema/reference/annotations
 	ValidateDefaults bool
+	// RegexpCompiler compiles regular expression patterns used in "pattern" and
+	// "patternProperties" keywords. If nil, Go's [regexp.Compile] is used.
+	// Provide a custom compiler for Perl-compatible features like lookahead.
+	RegexpCompiler RegexpCompiler
 }
 
 // Resolve resolves all references within the schema and performs other tasks that
@@ -182,6 +199,12 @@ func (root *Schema) Resolve(opts *ResolveOptions) (*Resolved, error) {
 		}
 	}
 
+	if r.opts.RegexpCompiler == nil {
+		r.opts.RegexpCompiler = func(pattern string) (Regexp, error) {
+			return regexp.Compile(pattern)
+		}
+	}
+
 	resolved, err := r.resolve(root, base)
 	if err != nil {
 		return nil, err
@@ -210,7 +233,7 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 	}
 	rs := newResolved(s)
 
-	if err := s.check(rs.resolvedInfos); err != nil {
+	if err := s.check(rs.resolvedInfos, r.opts.RegexpCompiler); err != nil {
 		return nil, err
 	}
 
@@ -230,7 +253,7 @@ func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
 	return rs, nil
 }
 
-func (root *Schema) check(infos map[*Schema]*resolvedInfo) error {
+func (root *Schema) check(infos map[*Schema]*resolvedInfo, compile RegexpCompiler) error {
 	// Check for structural validity. Do this first and fail fast:
 	// bad structure will cause other code to panic.
 	if err := root.checkStructure(infos); err != nil {
@@ -241,7 +264,7 @@ func (root *Schema) check(infos map[*Schema]*resolvedInfo) error {
 	report := func(err error) { errs = append(errs, err) }
 
 	for ss := range root.all() {
-		ss.checkLocal(report, infos)
+		ss.checkLocal(report, infos, compile)
 	}
 	return errors.Join(errs...)
 }
@@ -313,7 +336,7 @@ func (root *Schema) checkStructure(infos map[*Schema]*resolvedInfo) error {
 // Since checking a regexp involves compiling it, checkLocal saves those compiled regexps
 // in the schema for later use.
 // It appends the errors it finds to errs.
-func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo) {
+func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo, compile RegexpCompiler) {
 	addf := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		report(fmt.Errorf("jsonschema.Schema: %s: %s", s, msg))
@@ -343,7 +366,7 @@ func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo)
 
 	// Check and compile regexps.
 	if s.Pattern != "" {
-		re, err := regexp.Compile(s.Pattern)
+		re, err := compile(s.Pattern)
 		if err != nil {
 			addf("pattern: %v", err)
 		} else {
@@ -351,9 +374,9 @@ func (s *Schema) checkLocal(report func(error), infos map[*Schema]*resolvedInfo)
 		}
 	}
 	if len(s.PatternProperties) > 0 {
-		info.patternProperties = map[*regexp.Regexp]*Schema{}
+		info.patternProperties = map[Regexp]*Schema{}
 		for reString, subschema := range s.PatternProperties {
-			re, err := regexp.Compile(reString)
+			re, err := compile(reString)
 			if err != nil {
 				addf("patternProperties[%q]: %v", reString, err)
 				continue
