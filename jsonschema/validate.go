@@ -725,10 +725,13 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 			}
 
 			subschemaDefault := subschema.Default
-			subschemaInfo := st.rs.resolvedInfos[subschema]
 
-			if subschemaDefault == nil && subschemaInfo.resolvedRef != nil {
-				subschemaDefault = subschemaInfo.resolvedRef.Default
+			if st.rs.resolvedInfos != nil {
+				subschemaInfo := st.rs.resolvedInfos[subschema]
+
+				if subschemaDefault == nil && subschemaInfo != nil && subschemaInfo.resolvedRef != nil {
+					subschemaDefault = subschemaInfo.resolvedRef.Default
+				}
 			}
 
 			val := property(instance, prop)
