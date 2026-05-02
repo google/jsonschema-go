@@ -286,3 +286,17 @@ func TestRefCycle(t *testing.T) {
 	check(schemas["a"], "b")
 	check(schemas["b"], "a")
 }
+
+func TestResolveNilReceiver(t *testing.T) {
+	// Regression for https://github.com/google/jsonschema-go/issues/74:
+	// Resolve must return an error rather than panicking when called on a
+	// nil *Schema.
+	var s *Schema
+	_, err := s.Resolve(nil)
+	if err == nil {
+		t.Fatal("expected error from nil-receiver Resolve, got nil")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Errorf("expected error to mention nil; got %q", err.Error())
+	}
+}

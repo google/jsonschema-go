@@ -150,6 +150,9 @@ type ResolveOptions struct {
 // The schema must not be changed after Resolve is called.
 // The same schema may be resolved multiple times.
 func (root *Schema) Resolve(opts *ResolveOptions) (*Resolved, error) {
+	if root == nil {
+		return nil, errors.New("jsonschema: Resolve called on a nil *Schema")
+	}
 	// There are up to five steps required to prepare a schema to validate.
 	// 1. Load: read the schema from somewhere and unmarshal it.
 	//    This schema (root) may have been loaded or created in memory, but other schemas that
@@ -205,6 +208,9 @@ type resolver struct {
 }
 
 func (r *resolver) resolve(s *Schema, baseURI *url.URL) (*Resolved, error) {
+	if s == nil {
+		return nil, errors.New("jsonschema: cannot resolve a nil sub-schema")
+	}
 	if baseURI.Fragment != "" {
 		return nil, fmt.Errorf("base URI %s must not have a fragment", baseURI)
 	}
