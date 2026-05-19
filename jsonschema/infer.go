@@ -147,6 +147,22 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		return cloned, nil
 	}
 
+	// Schemer hook: types can self-describe by implementing JSONSchema. This
+	// is intentionally lower priority than TypeSchemas so callers can override
+	// a type they don't own, and the cost is one interface check per type.
+	if custom := schemerFor(t); custom != nil {
+		cloned := custom.CloneSchemas()
+		if allowNull {
+			if cloned.Type != "" {
+				cloned.Types = []string{"null", cloned.Type}
+				cloned.Type = ""
+			} else if !slices.Contains(cloned.Types, "null") {
+				cloned.Types = append([]string{"null"}, cloned.Types...)
+			}
+		}
+		return cloned, nil
+	}
+
 	var (
 		s   = new(Schema)
 		err error
@@ -393,6 +409,39 @@ func init() {
 	}
 	initialSchemaMap[reflect.TypeFor[big.Rat]()] = ss
 	initialSchemaMap[reflect.TypeFor[big.Float]()] = ss
+}
+
+// Schemer is implemented by types that want to provide an explicit JSON
+// Schema for themselves rather than have one inferred from their Go
+// definition.
+//
+// This is the right hook for "smart wrapper" types whose MarshalJSON emits a
+// primitive (string / number / boolean) and would otherwise be reflected as
+// {type: "object"} - the generator sees the struct fields, not the
+// marshalled form. Examples: decimal / money types backed by a private
+// *big.Int, UUID wrappers, custom time formats.
+//
+// JSONSchema is called on the zero value of the type during schema
+// generation, so it must not depend on instance state. Returning nil falls
+// back to the default reflection-based inference. ForOptions.TypeSchemas
+// takes precedence over Schemer so callers can still override a type they
+// don't control.
+type Schemer interface {
+	JSONSchema() *Schema
+}
+
+var schemerType = reflect.TypeFor[Schemer]()
+
+// schemerFor returns the schema declared by t's JSONSchema method, if any.
+// Methods declared with either a value or pointer receiver are honoured.
+func schemerFor(t reflect.Type) *Schema {
+	switch {
+	case t.Implements(schemerType):
+		return reflect.Zero(t).Interface().(Schemer).JSONSchema()
+	case reflect.PointerTo(t).Implements(schemerType):
+		return reflect.New(t).Interface().(Schemer).JSONSchema()
+	}
+	return nil
 }
 
 // Disallow jsonschema tag values beginning "WORD=", for future expansion.
