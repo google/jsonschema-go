@@ -728,7 +728,6 @@ func (st *state) applyDefaults(instancep reflect.Value, schema *Schema) (err err
 
 			if st.rs.resolvedInfos != nil {
 				subschemaInfo := st.rs.resolvedInfos[subschema]
-
 				if subschemaDefault == nil && subschemaInfo != nil && subschemaInfo.resolvedRef != nil {
 					subschemaDefault = subschemaInfo.resolvedRef.Default
 				}
