@@ -268,8 +268,8 @@ func TestApplyDefaultsWithRef(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		schema    Schema
-		instancep any
-		want      any
+		instancep *map[string]any
+		want      map[string]any
 	}{
 		{
 			name: "RefHasDefault",
@@ -317,8 +317,8 @@ func TestApplyDefaultsWithRef(t *testing.T) {
 			if err := res.ApplyDefaults(tt.instancep); err != nil {
 				t.Fatal(err)
 			}
-			got := reflect.ValueOf(tt.instancep).Elem().Interface()
-			if diff := cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(Schema{})); diff != "" {
+
+			if diff := cmp.Diff(&tt.want, tt.instancep, cmpopts.IgnoreUnexported(Schema{})); diff != "" {
 				t.Fatalf("Schema mismatch (-want +got):\n%s", diff)
 			}
 		})
