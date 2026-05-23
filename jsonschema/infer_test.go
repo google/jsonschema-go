@@ -726,6 +726,81 @@ func falseSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
+// stringDecimal mimics a third-party "smart wrapper" whose MarshalJSON emits
+// a string. The Go struct has no exported fields, so reflection alone would
+// reflect it as {type: "object"}. JSONSchema is the right hook for these.
+type stringDecimal struct{ raw string }
+
+func (stringDecimal) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{Type: "string"}
+}
+
+// ptrStringDecimal has the same intent as stringDecimal but declares the
+// method on a pointer receiver, which the Schemer hook must also honour.
+type ptrStringDecimal struct{ raw string }
+
+func (*ptrStringDecimal) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{Type: "string"}
+}
+
+// nilSchemer returns nil from JSONSchema, which must fall back to default
+// reflection-based inference rather than crash.
+type nilSchemer struct{ A int }
+
+func (nilSchemer) JSONSchema() *jsonschema.Schema { return nil }
+
+func TestForWithSchemer(t *testing.T) {
+	type wrapper struct {
+		Price     stringDecimal
+		PtrPrice  ptrStringDecimal
+		MaybeNil  *stringDecimal
+		Fallback  nilSchemer
+		Many      []stringDecimal
+	}
+
+	s, err := jsonschema.For[wrapper](nil)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+
+	if got := s.Properties["Price"].Type; got != "string" {
+		t.Errorf("Price.Type = %q, want %q", got, "string")
+	}
+	if got := s.Properties["PtrPrice"].Type; got != "string" {
+		t.Errorf("PtrPrice.Type = %q, want %q", got, "string")
+	}
+	// A pointer to a Schemer type should still defer to the type's schema but
+	// allow null as the outer type is a pointer.
+	if got := s.Properties["MaybeNil"].Types; len(got) != 2 || got[0] != "null" || got[1] != "string" {
+		t.Errorf("MaybeNil.Types = %v, want [null string]", got)
+	}
+	// nilSchemer returns nil from JSONSchema -> falls back to struct inference.
+	if got := s.Properties["Fallback"].Type; got != "object" {
+		t.Errorf("Fallback.Type = %q, want %q (fallback to struct inference)", got, "object")
+	}
+	// Slice items should pick up the Schemer hook on the element type.
+	if got := s.Properties["Many"].Items.Type; got != "string" {
+		t.Errorf("Many.Items.Type = %q, want %q", got, "string")
+	}
+}
+
+func TestForWithSchemerOverriddenByTypeSchemas(t *testing.T) {
+	// TypeSchemas must win over Schemer so callers can force a different
+	// schema for a third-party type they don't control.
+	opts := &jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[stringDecimal](): {Type: "integer"},
+		},
+	}
+	s, err := jsonschema.For[struct{ X stringDecimal }](opts)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	if got := s.Properties["X"].Type; got != "integer" {
+		t.Errorf("X.Type = %q, want %q (TypeSchemas should override Schemer)", got, "integer")
+	}
+}
+
 func TestDupSchema(t *testing.T) {
 	// Verify that we don't repeat schema contents, even if we clone the actual schemas.
 	type args struct {
