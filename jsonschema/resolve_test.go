@@ -14,6 +14,10 @@ import (
 	"testing"
 )
 
+var defaultRegexpCompiler RegexpCompiler = func(pattern string) (Regexp, error) {
+	return regexp.Compile(pattern)
+}
+
 func TestSchemaStructure(t *testing.T) {
 	check := func(s *Schema, want string) {
 		t.Helper()
@@ -203,7 +207,7 @@ func TestResolveURIs(t *testing.T) {
 			}
 
 			rs := newResolved(root)
-			if err := root.check(rs.resolvedInfos); err != nil {
+			if err := root.check(rs.resolvedInfos, defaultRegexpCompiler); err != nil {
 				t.Fatal(err)
 			}
 			if err := resolveURIs(rs, base); err != nil {
@@ -251,6 +255,72 @@ func TestResolveURIs(t *testing.T) {
 			}
 		})
 	}
+}
+
+var _ Regexp = alwaysMatch{}
+
+type alwaysMatch struct{}
+
+func (alwaysMatch) MatchString(string) bool { return true }
+
+func TestCustomRegexpCompiler(t *testing.T) {
+	always := func(string) (Regexp, error) {
+		return alwaysMatch{}, nil
+	}
+
+	t.Run("pattern uses custom compiler", func(t *testing.T) {
+		// "pattern" should fail with standard regexp (value doesn't match),
+		// but pass with alwaysMatch.
+		s := &Schema{
+			Type:    "string",
+			Pattern: "^foo$",
+		}
+		rs, err := s.Resolve(&ResolveOptions{RegexpCompiler: always})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// "bar" does not match ^foo$ but alwaysMatch accepts everything.
+		if err := rs.Validate("bar"); err != nil {
+			t.Errorf("expected validation to pass with custom compiler, got: %v", err)
+		}
+	})
+
+	t.Run("patternProperties uses custom compiler", func(t *testing.T) {
+		// With standard regexp "^x" matches "x1", but alwaysMatch matches every key.
+		s := &Schema{
+			Type: "object",
+			PatternProperties: map[string]*Schema{
+				"^x": {Type: "integer"},
+			},
+		}
+		rs, err := s.Resolve(&ResolveOptions{RegexpCompiler: always})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// "other" key would not match "^x" normally, but alwaysMatch makes it match.
+		// Since alwaysMatch matches, the value must satisfy {type: integer}.
+		err = rs.Validate(map[string]any{"other": "not-an-int"})
+		if err == nil {
+			t.Error("expected validation error because alwaysMatch matched patternProperties")
+		}
+	})
+
+	t.Run("compiler error is propagated", func(t *testing.T) {
+		failing := func(pattern string) (Regexp, error) {
+			return nil, errors.New("custom compile error")
+		}
+		s := &Schema{
+			Type:    "string",
+			Pattern: "anything",
+		}
+		_, err := s.Resolve(&ResolveOptions{RegexpCompiler: failing})
+		if err == nil {
+			t.Fatal("expected error from failing compiler")
+		}
+		if !strings.Contains(err.Error(), "custom compile error") {
+			t.Errorf("expected custom error message, got: %v", err)
+		}
+	})
 }
 
 func TestRefCycle(t *testing.T) {

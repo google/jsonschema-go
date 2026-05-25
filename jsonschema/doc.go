@@ -78,9 +78,10 @@ Use the "jsonschema" struct tag to provide a description for the property:
 
 # Deviations from the specification
 
-Regular expressions are processed with Go's regexp package, which differs
-from ECMA 262, most significantly in not supporting back-references.
-See [this table of differences] for more.
+Regular expressions are processed with Go's [regexp] package by default, which
+differs from ECMA 262, most significantly in not supporting back-references or
+lookahead. See [this table of differences] for more. To use a PCRE-compatible
+engine, provide a custom [RegexpCompiler] in [ResolveOptions].
 
 The "format" keyword described in [section 7 of the validation spec] is recorded
 in the Schema, but is ignored during validation.
