@@ -1,5 +1,7 @@
 # JSON Schema for Go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/google/jsonschema-go.svg)](https://pkg.go.dev/github.com/google/jsonschema-go)
+
 This module implements the [JSON Schema](https://json-schema.org/) specification.
 The `jsonschema` package supports creating schemas, validating JSON values
 against a schema, and inferring a schema from a Go struct. See the package
@@ -15,7 +17,7 @@ the tests.
 ## Issues
 
 This project uses the [GitHub issue
-tracker](https://github.com/google/jsonschema-go/issues) for bug reports, feature requests, and other issues. 
+tracker](https://github.com/google/jsonschema-go/issues) for bug reports, feature requests, and other issues.
 
 Please [report
 bugs](https://github.com/google/jsonschema-go/issues/new?template=bug_report.md). If the SDK is
@@ -33,4 +35,3 @@ When reporting a bug, make sure to answer these five questions:
 ## License
 
 This project is licensed under the MIT license. See the LICENSE file for details.
-
