@@ -19,6 +19,10 @@ import (
 	"sync"
 )
 
+var (
+	jsonNumberType = reflect.TypeFor[json.Number]()
+)
+
 // Equal reports whether two Go values representing JSON values are equal according
 // to the JSON Schema spec.
 // The values must not contain cycles.
@@ -264,6 +268,14 @@ func jsonType(v reflect.Value) (string, bool) {
 			return "integer", true
 		}
 		return "number", true
+	}
+	if v.Type() == jsonNumberType {
+		if value, err := v.Interface().(json.Number).Float64(); err == nil {
+			if _, f := math.Modf(value); f == 0 {
+				return "integer", true
+			}
+			return "number", true
+		}
 	}
 	switch v.Kind() {
 	case reflect.Bool:

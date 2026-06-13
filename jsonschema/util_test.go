@@ -48,33 +48,65 @@ func TestEqual(t *testing.T) {
 }
 
 func TestJSONType(t *testing.T) {
-	for _, tt := range []struct {
-		val  string
-		want string
-	}{
-		{`null`, "null"},
-		{`0`, "integer"},
-		{`0.0`, "integer"},
-		{`1e2`, "integer"},
-		{`0.1`, "number"},
-		{`""`, "string"},
-		{`true`, "boolean"},
-		{`[]`, "array"},
-		{`{}`, "object"},
-	} {
-		var val any
-		if err := json.Unmarshal([]byte(tt.val), &val); err != nil {
-			t.Fatal(err)
+	t.Run("normal unmarshal", func(t *testing.T) {
+		for _, tt := range []struct {
+			val  string
+			want string
+		}{
+			{`null`, "null"},
+			{`0`, "integer"},
+			{`0.0`, "integer"},
+			{`1e2`, "integer"},
+			{`0.1`, "number"},
+			{`""`, "string"},
+			{`true`, "boolean"},
+			{`[]`, "array"},
+			{`{}`, "object"},
+		} {
+			var val any
+			if err := json.Unmarshal([]byte(tt.val), &val); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := jsonType(reflect.ValueOf(val))
+			if !ok {
+				t.Fatalf("jsonType failed on %q", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
 		}
-		got, ok := jsonType(reflect.ValueOf(val))
-		if !ok {
-			t.Fatalf("jsonType failed on %q", tt.val)
-		}
-		if got != tt.want {
-			t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
-		}
+	})
 
-	}
+	t.Run("with UseNumber", func(t *testing.T) {
+		for _, tt := range []struct {
+			val  string
+			want string
+		}{
+			{`null`, "null"},
+			{`0`, "integer"},
+			{`0.0`, "integer"},
+			{`1e2`, "integer"},
+			{`0.1`, "number"},
+			{`""`, "string"},
+			{`true`, "boolean"},
+			{`[]`, "array"},
+			{`{}`, "object"},
+		} {
+			var val any
+			decoder := json.NewDecoder(strings.NewReader(tt.val))
+			decoder.UseNumber()
+			if err := decoder.Decode(&val); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := jsonType(reflect.ValueOf(val))
+			if !ok {
+				t.Fatalf("jsonType failed on %q", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
+		}
+	})
 }
 
 func TestHash(t *testing.T) {
