@@ -696,29 +696,70 @@ func TestForWithCycle(t *testing.T) {
 	type c2 struct{ C map[string]*c2 }
 
 	tests := []struct {
-		name      string
-		shouldErr bool
-		fn        func() error
+		name string
+		// recursive reports whether the type refers to itself, in which case
+		// the recursive occurrence is expected to be emitted as a "$ref" to a
+		// "$defs" entry rather than producing an error.
+		recursive bool
+		fn        func() (*jsonschema.Schema, error)
 	}{
-		{"slice alias (a)", true, func() error { _, err := jsonschema.For[a](nil); return err }},
-		{"unexported self cycle (b1)", false, func() error { _, err := jsonschema.For[b1](nil); return err }},
-		{"exported self cycle (b2)", true, func() error { _, err := jsonschema.For[b2](nil); return err }},
-		{"unexported map self cycle (c1)", false, func() error { _, err := jsonschema.For[c1](nil); return err }},
-		{"exported map self cycle (c2)", true, func() error { _, err := jsonschema.For[c2](nil); return err }},
-		{"cross-cycle x -> y -> x", true, func() error { _, err := jsonschema.For[x](nil); return err }},
-		{"cross-cycle y -> x -> y", true, func() error { _, err := jsonschema.For[y](nil); return err }},
+		{"slice alias (a)", true, func() (*jsonschema.Schema, error) { return jsonschema.For[a](nil) }},
+		{"unexported self cycle (b1)", false, func() (*jsonschema.Schema, error) { return jsonschema.For[b1](nil) }},
+		{"exported self cycle (b2)", true, func() (*jsonschema.Schema, error) { return jsonschema.For[b2](nil) }},
+		{"unexported map self cycle (c1)", false, func() (*jsonschema.Schema, error) { return jsonschema.For[c1](nil) }},
+		{"exported map self cycle (c2)", true, func() (*jsonschema.Schema, error) { return jsonschema.For[c2](nil) }},
+		{"cross-cycle x -> y -> x", true, func() (*jsonschema.Schema, error) { return jsonschema.For[x](nil) }},
+		{"cross-cycle y -> x -> y", true, func() (*jsonschema.Schema, error) { return jsonschema.For[y](nil) }},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.fn()
-			if test.shouldErr && err == nil {
-				t.Errorf("expected cycle error, got nil")
+			s, err := test.fn()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if !test.shouldErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if test.recursive {
+				if len(s.Defs) == 0 {
+					t.Errorf("expected $defs for recursive type, got none")
+				}
+				// The resulting schema, including its self-references, must be
+				// resolvable.
+				if _, err := s.Resolve(nil); err != nil {
+					t.Errorf("resolving recursive schema: %v", err)
+				}
+			} else if len(s.Defs) != 0 {
+				t.Errorf("expected no $defs for non-recursive type, got %v", s.Defs)
 			}
 		})
+	}
+}
+
+// TestForWithCycleRef verifies the precise shape of the schema generated for a
+// self-referential type: the recursive field becomes a "$ref" into "$defs".
+func TestForWithCycleRef(t *testing.T) {
+	type Node struct {
+		Children []*Node `json:",omitempty"`
+	}
+	s, err := jsonschema.For[Node](nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Ref != "#/$defs/Node" {
+		t.Fatalf("expected root $ref %q, got %q", "#/$defs/Node", s.Ref)
+	}
+	def, ok := s.Defs["Node"]
+	if !ok {
+		t.Fatalf("expected $defs entry for Node, got %v", s.Defs)
+	}
+	children := def.Properties["Children"]
+	if children == nil {
+		t.Fatalf("expected Children property in def, got %v", def.Properties)
+	}
+	if children.Items == nil || children.Items.Ref != "#/$defs/Node" {
+		t.Errorf("expected Children items to $ref #/$defs/Node, got %+v", children.Items)
+	}
+	if _, err := s.Resolve(nil); err != nil {
+		t.Errorf("resolving recursive schema: %v", err)
 	}
 }
 

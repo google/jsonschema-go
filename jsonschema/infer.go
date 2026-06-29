@@ -65,7 +65,9 @@ type ForOptions struct {
 //     translate to schemas that match the values to which they marshal.
 //     For example, [time.Time] translates to the schema for strings.
 //
-// For will return an error if there is a cycle in the types.
+// If t contains a cycle (a type that refers to itself, directly or indirectly),
+// the recursive type is emitted once under "$defs" and referenced with "$ref"
+// wherever it recurs, instead of producing an error.
 //
 // By default, For returns an error if t contains (possibly recursively) any of the
 // following Go types, as they are incompatible with the JSON schema spec.
@@ -87,11 +89,13 @@ func For[T any](opts *ForOptions) (*Schema, error) {
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
 	maps.Copy(schemas, opts.TypeSchemas)
-	s, err := forType(reflect.TypeFor[T](), map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
+	st := newInferState(opts.IgnoreInvalidTypes, schemas)
+	s, err := forType(reflect.TypeFor[T](), st)
 	if err != nil {
 		var z T
 		return nil, fmt.Errorf("For[%T](): %w", z, err)
 	}
+	st.attachDefs(s)
 	return s, nil
 }
 
@@ -103,10 +107,12 @@ func ForType(t reflect.Type, opts *ForOptions) (*Schema, error) {
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
 	maps.Copy(schemas, opts.TypeSchemas)
-	s, err := forType(t, map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
+	st := newInferState(opts.IgnoreInvalidTypes, schemas)
+	s, err := forType(t, st)
 	if err != nil {
 		return nil, fmt.Errorf("ForType(%s): %w", t, err)
 	}
+	st.attachDefs(s)
 	return s, nil
 }
 
@@ -115,7 +121,69 @@ func f64Ptr(f float64) *float64 {
 	return &f
 }
 
-func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas map[reflect.Type]*Schema) (*Schema, error) {
+// inferState holds the mutable state shared across a single inference,
+// threaded through the recursive calls to [forType].
+type inferState struct {
+	// ignore reports whether invalid types should be skipped instead of
+	// causing an error (see [ForOptions.IgnoreInvalidTypes]).
+	ignore bool
+	// schemas maps types to predefined schemas that override the defaults.
+	schemas map[reflect.Type]*Schema
+	// seen holds the named types currently being inferred (i.e. on the
+	// recursion stack), used to detect cycles.
+	seen map[reflect.Type]bool
+	// defNames maps a recursive type to the name under which its schema is
+	// stored in defs. A type gains an entry the first time it is found to
+	// refer to itself.
+	defNames map[reflect.Type]string
+	// usedNames records the def names already handed out, so that distinct
+	// types sharing a simple name get unique entries.
+	usedNames map[string]bool
+	// defs collects the schemas of recursive types, to be attached to the
+	// root schema under "$defs".
+	defs map[string]*Schema
+}
+
+func newInferState(ignore bool, schemas map[reflect.Type]*Schema) *inferState {
+	return &inferState{
+		ignore:    ignore,
+		schemas:   schemas,
+		seen:      map[reflect.Type]bool{},
+		defNames:  map[reflect.Type]string{},
+		usedNames: map[string]bool{},
+		defs:      map[string]*Schema{},
+	}
+}
+
+// defName returns the def name for a recursive type, assigning a unique one on
+// first use.
+func (st *inferState) defName(t reflect.Type) string {
+	if name, ok := st.defNames[t]; ok {
+		return name
+	}
+	base := t.Name()
+	name := base
+	for i := 2; st.usedNames[name]; i++ {
+		name = fmt.Sprintf("%s%d", base, i)
+	}
+	st.usedNames[name] = true
+	st.defNames[t] = name
+	return name
+}
+
+// ref returns a schema that references the def for the given type.
+func (st *inferState) ref(t reflect.Type) *Schema {
+	return &Schema{Ref: "#/$defs/" + st.defName(t)}
+}
+
+// attachDefs places any collected recursive-type definitions on the root schema.
+func (st *inferState) attachDefs(root *Schema) {
+	if root != nil && len(st.defs) > 0 {
+		root.Defs = st.defs
+	}
+}
+
+func forType(t reflect.Type, st *inferState) (*Schema, error) {
 	// Follow pointers: the schema for *T is almost the same as for T, except that
 	// an explicit JSON "null" is allowed for the pointer.
 	allowNull := false
@@ -124,17 +192,27 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		t = t.Elem()
 	}
 
-	// Check for cycles
-	// User defined types have a name, so we can skip those that are natively defined
+	// Detect cycles. User defined types have a name, so we can skip those that
+	// are natively defined.
+	// When a named type refers to itself (directly or indirectly), emit a
+	// "$ref" to a shared definition instead of recursing forever. The full
+	// schema for the type is collected into st.defs by the outer (first) call
+	// for the type once it finishes computing (see the end of this function).
 	if t.Name() != "" {
-		if seen[t] {
-			return nil, fmt.Errorf("cycle detected for type %v", t)
+		if _, ok := st.defNames[t]; ok {
+			// Already known to be recursive; reference the shared definition.
+			return st.ref(t), nil
 		}
-		seen[t] = true
-		defer delete(seen, t)
+		if st.seen[t] {
+			// First time we close a cycle on this type: reserve a definition
+			// name and reference it.
+			return st.ref(t), nil
+		}
+		st.seen[t] = true
+		defer delete(st.seen, t)
 	}
 
-	if s := schemas[t]; s != nil {
+	if s := st.schemas[t]; s != nil {
 		cloned := s.CloneSchemas()
 		if os.Getenv(debugEnv) != "typeschemasnull=1" && allowNull {
 			if cloned.Type != "" {
@@ -201,17 +279,17 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 	case reflect.Map:
 		if t.Key().Kind() != reflect.String && !t.Key().Implements(reflect.TypeFor[encoding.TextMarshaler]()) {
-			if ignore {
+			if st.ignore {
 				return nil, nil // ignore
 			}
 			return nil, fmt.Errorf("unsupported map key type %v", t.Key().Kind())
 		}
 		s.Type = "object"
-		s.AdditionalProperties, err = forType(t.Elem(), seen, ignore, schemas)
+		s.AdditionalProperties, err = forType(t.Elem(), st)
 		if err != nil {
 			return nil, fmt.Errorf("computing map value schema: %v", err)
 		}
-		if ignore && s.AdditionalProperties == nil {
+		if st.ignore && s.AdditionalProperties == nil {
 			// Ignore if the element type is invalid.
 			return nil, nil
 		}
@@ -222,7 +300,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		} else {
 			s.Type = "array"
 		}
-		itemsSchema, err := forType(t.Elem(), seen, ignore, schemas)
+		itemsSchema, err := forType(t.Elem(), st)
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
@@ -230,7 +308,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			return nil, nil
 		}
 		s.Items = itemsSchema
-		if ignore && s.Items == nil {
+		if st.ignore && s.Items == nil {
 			// Ignore if the element type is invalid.
 			return nil, nil
 		}
@@ -255,7 +333,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 				s.Properties = make(map[string]*Schema)
 			}
 			if field.Anonymous {
-				override := schemas[field.Type]
+				override := st.schemas[field.Type]
 				if override != nil {
 					// Type must be object, and only properties can be set.
 					if override.Type != "object" {
@@ -318,11 +396,11 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			if info.omit {
 				continue
 			}
-			fs, err := forType(field.Type, seen, ignore, schemas)
+			fs, err := forType(field.Type, st)
 			if err != nil {
 				return nil, err
 			}
-			if ignore && fs == nil {
+			if st.ignore && fs == nil {
 				// Skip fields of invalid type.
 				continue
 			}
@@ -366,12 +444,23 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		}
 
 	default:
-		if ignore {
+		if st.ignore {
 			// Ignore.
 			return nil, nil
 		}
 		return nil, fmt.Errorf("type %v is unsupported by jsonschema", t)
 	}
+
+	// If a nested occurrence of this type closed a cycle, it was assigned a def
+	// name. Store the freshly computed schema as the canonical definition and
+	// return a reference to it. The definition is stored before the allowNull
+	// wrapping below, so it describes the type itself rather than a nullable
+	// occurrence of it; nullability at the reference site is not preserved.
+	if name, ok := st.defNames[t]; ok {
+		st.defs[name] = s
+		return &Schema{Ref: "#/$defs/" + name}, nil
+	}
+
 	if allowNull && s.Type != "" {
 		s.Types = []string{"null", s.Type}
 		s.Type = ""
