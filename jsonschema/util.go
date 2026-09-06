@@ -265,6 +265,16 @@ func jsonType(v reflect.Value) (string, bool) {
 		}
 		return "number", true
 	}
+	if v.Type() == reflect.TypeFor[json.Number]() {
+		r, ok := jsonNumber(v)
+		if !ok {
+			return "", false
+		}
+		if r.IsInt() {
+			return "integer", true
+		}
+		return "number", true
+	}
 	switch v.Kind() {
 	case reflect.Bool:
 		return "boolean", true

@@ -75,6 +75,28 @@ func TestJSONType(t *testing.T) {
 		}
 
 	}
+	for _, tt := range []struct {
+		val  json.Number
+		want string
+		ok   bool
+	}{
+		{"0", "integer", true},
+		{"0.0", "integer", true},
+		{"1e2", "integer", true},
+		{"0.1", "number", true},
+		{"-42", "integer", true},
+		{"-42.5", "number", true},
+		{"9007199254740993", "integer", true},
+		{"bad", "", false},
+	} {
+		got, ok := jsonType(reflect.ValueOf(tt.val))
+		if ok != tt.ok {
+			t.Errorf("%s: got ok %t, want %t", tt.val, ok, tt.ok)
+		}
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+		}
+	}
 }
 
 func TestHash(t *testing.T) {
