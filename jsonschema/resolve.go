@@ -445,7 +445,7 @@ func resolveURIs(rs *Resolved, baseURI *url.URL) error {
 					// anchor did not exist in draft 7, id was used for base uri and document navigation
 					// https://json-schema.org/draft-07/draft-handrews-json-schema-01#id-keyword
 					anchorName := strings.TrimPrefix(s.ID, "#")
-					setAnchor(s, baseInfo, anchorName, false)
+					return setAnchor(s, baseInfo, anchorName, false)
 				} else {
 					// The base URI for this schema is its $id resolved against the parent base.
 					info.uri = baseInfo.uri.ResolveReference(idURI)
@@ -460,8 +460,10 @@ func resolveURIs(rs *Resolved, baseURI *url.URL) error {
 		}
 		info.base = base
 		if rs.draft == draft2020 {
-			setAnchor(s, baseInfo, s.Anchor, false)
-			setAnchor(s, baseInfo, s.DynamicAnchor, true)
+			if err := setAnchor(s, baseInfo, s.Anchor, false); err != nil {
+				return err
+			}
+			return setAnchor(s, baseInfo, s.DynamicAnchor, true)
 		}
 
 		for c := range s.children() {
