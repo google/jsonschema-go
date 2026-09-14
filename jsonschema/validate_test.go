@@ -670,3 +670,234 @@ func loadSchemaFromFile(filename string) (*Schema, error) {
 	}
 	return &s, nil
 }
+
+func TestValidateJSONNumber(t *testing.T) {
+	t.Run("oneOf regression", func(t *testing.T) {
+		one := 1
+		s := &Schema{OneOf: []*Schema{
+			{Type: "number", MaxLength: &one},
+			{Type: "integer"},
+		}}
+		r, err := s.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		dec := json.NewDecoder(strings.NewReader(`42`))
+		dec.UseNumber()
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatal(err)
+		}
+		err = r.Validate(v)
+		if err == nil || !strings.Contains(err.Error(), "oneOf: validated against both") {
+			t.Errorf("got %v, want oneOf validation failure", err)
+		}
+
+		var f any
+		if err := json.Unmarshal([]byte(`42`), &f); err != nil {
+			t.Fatal(err)
+		}
+		err = r.Validate(f)
+		if err == nil || !strings.Contains(err.Error(), "oneOf: validated against both") {
+			t.Errorf("got %v, want oneOf validation failure", err)
+		}
+	})
+
+	t.Run("null property regression", func(t *testing.T) {
+		var m map[string]json.Number
+		if err := json.Unmarshal([]byte(`{"a":null}`), &m); err != nil {
+			t.Fatal(err)
+		}
+
+		s := &Schema{Properties: map[string]*Schema{
+			"a": {Types: []string{"string", "null"}},
+		}}
+		r, err := s.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Validate(m); err != nil {
+			t.Errorf("typed map: got error %v, want nil", err)
+		}
+
+		var plain map[string]any
+		if err := json.Unmarshal([]byte(`{"a":null}`), &plain); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Validate(plain); err != nil {
+			t.Errorf("any map: got error %v, want nil", err)
+		}
+	})
+
+	t.Run("large exponent regression", func(t *testing.T) {
+		num := json.Number("1e9999999")
+
+		sStr, _ := (&Schema{Type: "string"}).Resolve(nil)
+		sNum, _ := (&Schema{Type: "number"}).Resolve(nil)
+		sInt, _ := (&Schema{Type: "integer"}).Resolve(nil)
+		sNumOrStr, _ := (&Schema{Types: []string{"number", "string"}}).Resolve(nil)
+
+		if err := sStr.Validate(num); err != nil {
+			t.Errorf("type:string on 1e9999999: got %v, want nil", err)
+		}
+		if err := sNumOrStr.Validate(num); err != nil {
+			t.Errorf("type:[number,string] on 1e9999999: got %v, want nil", err)
+		}
+		if err := sNum.Validate(num); err == nil || strings.Contains(err.Error(), "is not a valid JSON value") {
+			t.Errorf("type:number on 1e9999999: got %v, want standard type mismatch error", err)
+		}
+		if err := sInt.Validate(num); err == nil || strings.Contains(err.Error(), "is not a valid JSON value") {
+			t.Errorf("type:integer on 1e9999999: got %v, want standard type mismatch error", err)
+		}
+	})
+
+	t.Run("invalid numeric syntax", func(t *testing.T) {
+		invalids := []string{
+			"0x10",
+			"1/2",
+			"+5",
+			".5",
+			"1_000",
+			"0123",
+			"0b101",
+		}
+
+		sNum, _ := (&Schema{Type: "number"}).Resolve(nil)
+		sInt, _ := (&Schema{Type: "integer"}).Resolve(nil)
+		sStr, _ := (&Schema{Type: "string"}).Resolve(nil)
+
+		for _, inv := range invalids {
+			val := json.Number(inv)
+			if err := sNum.Validate(val); err == nil {
+				t.Errorf("type:number should reject %q", inv)
+			}
+			if err := sInt.Validate(val); err == nil {
+				t.Errorf("type:integer should reject %q", inv)
+			}
+			if err := sStr.Validate(val); err != nil {
+				t.Errorf("type:string should accept fallback %q, got %v", inv, err)
+			}
+		}
+	})
+
+	t.Run("exact precision", func(t *testing.T) {
+		num := json.Number("1.0000000000000000001")
+
+		sNum, _ := (&Schema{Type: "number"}).Resolve(nil)
+		sInt, _ := (&Schema{Type: "integer"}).Resolve(nil)
+
+		if err := sNum.Validate(num); err != nil {
+			t.Errorf("type:number on %s: got %v, want nil", num, err)
+		}
+		if err := sInt.Validate(num); err == nil {
+			t.Errorf("type:integer on %s: got nil, want type mismatch", num)
+		}
+	})
+
+	t.Run("const and enum equality", func(t *testing.T) {
+		sConstStr, _ := (&Schema{Const: Ptr[any]("42")}).Resolve(nil)
+		sConstNum, _ := (&Schema{Const: Ptr[any](42)}).Resolve(nil)
+		sEnumStr, _ := (&Schema{Enum: []any{"42"}}).Resolve(nil)
+		sEnumNum, _ := (&Schema{Enum: []any{42}}).Resolve(nil)
+
+		num := json.Number("42")
+		// json.Number("42") must not equal string "42"
+		if err := sConstStr.Validate(num); err == nil {
+			t.Errorf("const '42' should not match json.Number('42')")
+		}
+		if err := sEnumStr.Validate(num); err == nil {
+			t.Errorf("enum ['42'] should not match json.Number('42')")
+		}
+
+		// json.Number("42") must equal numeric 42
+		if err := sConstNum.Validate(num); err != nil {
+			t.Errorf("const 42 should match json.Number('42'), got %v", err)
+		}
+		if err := sEnumNum.Validate(num); err != nil {
+			t.Errorf("enum [42] should match json.Number('42'), got %v", err)
+		}
+	})
+
+	t.Run("nested const and enum", func(t *testing.T) {
+		sConst, err := (&Schema{Const: Ptr[any](map[string]any{"a": 1})}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sEnum, err := (&Schema{Enum: []any{[]any{1, 2, 3}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sNotEnum, err := (&Schema{Not: &Schema{Enum: []any{[]any{1, 2, 3}}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// const with nested json.Number
+		instMap := map[string]any{"a": json.Number("1")}
+		if err := sConst.Validate(instMap); err != nil {
+			t.Errorf("const with nested json.Number: got %v, want nil", err)
+		}
+
+		// enum with nested json.Number
+		instSlice := []any{json.Number("1"), json.Number("2"), json.Number("3")}
+		if err := sEnum.Validate(instSlice); err != nil {
+			t.Errorf("enum with nested json.Number: got %v, want nil", err)
+		}
+
+		sEnumSingle, err := (&Schema{Enum: []any{[]any{1}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sEnumSingle.Validate([]any{json.Number("1")}); err != nil {
+			t.Errorf("enum [[1]] with [json.Number('1')]: got %v, want nil", err)
+		}
+
+		// not/enum with nested json.Number
+		if err := sNotEnum.Validate(instSlice); err == nil {
+			t.Errorf("not/enum with nested json.Number: want error, got nil")
+		}
+	})
+
+	t.Run("uniqueItems with json.Number", func(t *testing.T) {
+		s, err := (&Schema{UniqueItems: true}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst := []any{json.Number("42"), 42.0}
+		if err := s.Validate(inst); err == nil {
+			t.Errorf("uniqueItems with json.Number and float: want duplicate error, got nil")
+		}
+	})
+
+	t.Run("if then with nested json.Number", func(t *testing.T) {
+		s := &Schema{
+			If: &Schema{
+				Properties: map[string]*Schema{
+					"meta": {
+						Const: Ptr[any](map[string]any{"level": 1}),
+					},
+				},
+				Required: []string{"meta"},
+			},
+			Then: &Schema{
+				Required: []string{"auth"},
+			},
+		}
+		r, err := s.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		dec := json.NewDecoder(strings.NewReader(`{"meta":{"level":1}}`))
+		dec.UseNumber()
+		var doc any
+		if err := dec.Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := r.Validate(doc); err == nil || !strings.Contains(err.Error(), `"auth"`) {
+			t.Errorf("if/then with nested json.Number: got %v, want missing 'auth' error", err)
+		}
+	})
+}

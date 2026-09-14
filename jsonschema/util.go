@@ -19,6 +19,8 @@ import (
 	"sync"
 )
 
+var jsonNumberType = reflect.TypeFor[json.Number]()
+
 // Equal reports whether two Go values representing JSON values are equal according
 // to the JSON Schema spec.
 // The values must not contain cycles.
@@ -39,8 +41,8 @@ func equalValue(x, y reflect.Value) bool {
 	// Treat numbers specially.
 	rx, ok1 := jsonNumber(x)
 	ry, ok2 := jsonNumber(y)
-	if ok1 && ok2 {
-		return rx.Cmp(ry) == 0
+	if ok1 || ok2 {
+		return ok1 && ok2 && rx.Cmp(ry) == 0
 	}
 	if x.Kind() != y.Kind() {
 		return false
@@ -219,9 +221,58 @@ func hashValue(h *maphash.Hash, v reflect.Value) {
 	write(v)
 }
 
+// isValidJSONNumber reports whether s is a valid JSON number according to RFC 8259.
+func isValidJSONNumber(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	i := 0
+	if s[0] == '-' {
+		i++
+		if i == len(s) {
+			return false
+		}
+	}
+	if s[i] == '0' {
+		i++
+	} else if s[i] >= '1' && s[i] <= '9' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	} else {
+		return false
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		if i == len(s) || s[i] < '0' || s[i] > '9' {
+			return false
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		if i == len(s) || s[i] < '0' || s[i] > '9' {
+			return false
+		}
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	return i == len(s)
+}
+
 // jsonNumber converts a numeric value or a json.Number to a [big.Rat].
 // If v is not a number, it returns nil, false.
 func jsonNumber(v reflect.Value) (*big.Rat, bool) {
+	for v.Kind() == reflect.Interface && !v.IsNil() {
+		v = v.Elem()
+	}
 	r := new(big.Rat)
 	switch {
 	case !v.IsValid():
@@ -237,7 +288,11 @@ func jsonNumber(v reflect.Value) (*big.Rat, bool) {
 		if !ok {
 			return nil, false
 		}
-		if _, ok := r.SetString(jn.String()); !ok {
+		s := jn.String()
+		if !isValidJSONNumber(s) {
+			return nil, false
+		}
+		if _, ok := r.SetString(s); !ok {
 			// This can fail in rare cases; for example, "1e9999999".
 			// That is a valid JSON number, since the spec puts no limit on the size
 			// of the exponent.
@@ -265,6 +320,14 @@ func jsonType(v reflect.Value) (string, bool) {
 		}
 		return "number", true
 	}
+	if v.Type() == jsonNumberType {
+		if r, ok := jsonNumber(v); ok {
+			if r.IsInt() {
+				return "integer", true
+			}
+			return "number", true
+		}
+	}
 	switch v.Kind() {
 	case reflect.Bool:
 		return "boolean", true
@@ -277,6 +340,15 @@ func jsonType(v reflect.Value) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// isString reports whether v represents a JSON string value.
+func isString(v reflect.Value) bool {
+	if v.Kind() != reflect.String {
+		return false
+	}
+	t, ok := jsonType(v)
+	return ok && t == "string"
 }
 
 func assert(cond bool, msg string) {

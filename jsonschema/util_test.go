@@ -33,6 +33,17 @@ func TestEqual(t *testing.T) {
 			map[string]any{"a": 1.0, "b": 2},
 			true,
 		},
+		{json.Number("42"), 42, true},
+		{json.Number("42"), 42.0, true},
+		{json.Number("42"), "42", false},
+		{"42", json.Number("42"), false},
+		{json.Number("42"), json.Number("42"), true},
+		{json.Number("42"), json.Number("42.0"), true},
+		{json.Number("42"), json.Number("43"), false},
+		{map[string]any{"k": json.Number("1")}, map[string]any{"k": 1.0}, true},
+		{map[string]any{"k": json.Number("1")}, map[string]any{"k": "1"}, false},
+		{[]any{json.Number("1")}, []any{1}, true},
+		{[]any{json.Number("1")}, []any{"1"}, false},
 	} {
 		check := func(x1, x2 any, want bool) {
 			t.Helper()
@@ -48,7 +59,7 @@ func TestEqual(t *testing.T) {
 }
 
 func TestJSONType(t *testing.T) {
-	for _, tt := range []struct {
+	stdCases := []struct {
 		val  string
 		want string
 	}{
@@ -61,20 +72,88 @@ func TestJSONType(t *testing.T) {
 		{`true`, "boolean"},
 		{`[]`, "array"},
 		{`{}`, "object"},
-	} {
-		var val any
-		if err := json.Unmarshal([]byte(tt.val), &val); err != nil {
-			t.Fatal(err)
-		}
-		got, ok := jsonType(reflect.ValueOf(val))
-		if !ok {
-			t.Fatalf("jsonType failed on %q", tt.val)
-		}
-		if got != tt.want {
-			t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
-		}
-
 	}
+
+	t.Run("normal unmarshal", func(t *testing.T) {
+		for _, tt := range stdCases {
+			var val any
+			if err := json.Unmarshal([]byte(tt.val), &val); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := jsonType(reflect.ValueOf(val))
+			if !ok {
+				t.Fatalf("jsonType failed on %q", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("with UseNumber", func(t *testing.T) {
+		for _, tt := range stdCases {
+			var val any
+			decoder := json.NewDecoder(strings.NewReader(tt.val))
+			decoder.UseNumber()
+			if err := decoder.Decode(&val); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := jsonType(reflect.ValueOf(val))
+			if !ok {
+				t.Fatalf("jsonType failed on %q", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("exact precision", func(t *testing.T) {
+		for _, tt := range []struct {
+			val  json.Number
+			want string
+		}{
+			{"-42", "integer"},
+			{"-42.5", "number"},
+			{"9007199254740993", "integer"},
+			{"1.0000000000000000001", "number"},
+			{"1e400", "integer"},
+		} {
+			got, ok := jsonType(reflect.ValueOf(tt.val))
+			if !ok {
+				t.Errorf("%s: got ok false, want true", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("fallback cases", func(t *testing.T) {
+		for _, tt := range []struct {
+			val  json.Number
+			want string
+		}{
+			{"", "string"},
+			{"1e9999999", "string"},
+			{"0x10", "string"},
+			{"1/2", "string"},
+			{"+5", "string"},
+			{".5", "string"},
+			{"1_000", "string"},
+			{"0123", "string"},
+			{"0b101", "string"},
+			{"bad", "string"},
+		} {
+			got, ok := jsonType(reflect.ValueOf(tt.val))
+			if !ok {
+				t.Errorf("%s: got ok false, want true", tt.val)
+			}
+			if got != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.val, got, tt.want)
+			}
+		}
+	})
 }
 
 func TestHash(t *testing.T) {
