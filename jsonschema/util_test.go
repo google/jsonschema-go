@@ -40,6 +40,10 @@ func TestEqual(t *testing.T) {
 		{json.Number("42"), json.Number("42"), true},
 		{json.Number("42"), json.Number("42.0"), true},
 		{json.Number("42"), json.Number("43"), false},
+		{map[string]any{"k": json.Number("1")}, map[string]any{"k": 1.0}, true},
+		{map[string]any{"k": json.Number("1")}, map[string]any{"k": "1"}, false},
+		{[]any{json.Number("1")}, []any{1}, true},
+		{[]any{json.Number("1")}, []any{"1"}, false},
 	} {
 		check := func(x1, x2 any, want bool) {
 			t.Helper()

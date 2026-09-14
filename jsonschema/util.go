@@ -270,6 +270,9 @@ func isValidJSONNumber(s string) bool {
 // jsonNumber converts a numeric value or a json.Number to a [big.Rat].
 // If v is not a number, it returns nil, false.
 func jsonNumber(v reflect.Value) (*big.Rat, bool) {
+	for v.Kind() == reflect.Interface && !v.IsNil() {
+		v = v.Elem()
+	}
 	r := new(big.Rat)
 	switch {
 	case !v.IsValid():

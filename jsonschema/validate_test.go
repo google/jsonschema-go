@@ -818,4 +818,86 @@ func TestValidateJSONNumber(t *testing.T) {
 			t.Errorf("enum [42] should match json.Number('42'), got %v", err)
 		}
 	})
+
+	t.Run("nested const and enum", func(t *testing.T) {
+		sConst, err := (&Schema{Const: Ptr[any](map[string]any{"a": 1})}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sEnum, err := (&Schema{Enum: []any{[]any{1, 2, 3}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sNotEnum, err := (&Schema{Not: &Schema{Enum: []any{[]any{1, 2, 3}}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// const with nested json.Number
+		instMap := map[string]any{"a": json.Number("1")}
+		if err := sConst.Validate(instMap); err != nil {
+			t.Errorf("const with nested json.Number: got %v, want nil", err)
+		}
+
+		// enum with nested json.Number
+		instSlice := []any{json.Number("1"), json.Number("2"), json.Number("3")}
+		if err := sEnum.Validate(instSlice); err != nil {
+			t.Errorf("enum with nested json.Number: got %v, want nil", err)
+		}
+
+		sEnumSingle, err := (&Schema{Enum: []any{[]any{1}}}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sEnumSingle.Validate([]any{json.Number("1")}); err != nil {
+			t.Errorf("enum [[1]] with [json.Number('1')]: got %v, want nil", err)
+		}
+
+		// not/enum with nested json.Number
+		if err := sNotEnum.Validate(instSlice); err == nil {
+			t.Errorf("not/enum with nested json.Number: want error, got nil")
+		}
+	})
+
+	t.Run("uniqueItems with json.Number", func(t *testing.T) {
+		s, err := (&Schema{UniqueItems: true}).Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst := []any{json.Number("42"), 42.0}
+		if err := s.Validate(inst); err == nil {
+			t.Errorf("uniqueItems with json.Number and float: want duplicate error, got nil")
+		}
+	})
+
+	t.Run("if then with nested json.Number", func(t *testing.T) {
+		s := &Schema{
+			If: &Schema{
+				Properties: map[string]*Schema{
+					"meta": {
+						Const: Ptr[any](map[string]any{"level": 1}),
+					},
+				},
+				Required: []string{"meta"},
+			},
+			Then: &Schema{
+				Required: []string{"auth"},
+			},
+		}
+		r, err := s.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		dec := json.NewDecoder(strings.NewReader(`{"meta":{"level":1}}`))
+		dec.UseNumber()
+		var doc any
+		if err := dec.Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := r.Validate(doc); err == nil || !strings.Contains(err.Error(), `"auth"`) {
+			t.Errorf("if/then with nested json.Number: got %v, want missing 'auth' error", err)
+		}
+	})
 }
