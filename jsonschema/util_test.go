@@ -25,6 +25,13 @@ func TestEqual(t *testing.T) {
 		{nil, 0, false},
 		{"0", 0, false},
 		{2.5, 2.5, true},
+		{json.Number("1"), "1", false},
+		{json.Number("1.0"), "1.0", false},
+		{json.Number("1e999999999999999999"), "1e999999999999999999", false},
+		{json.Number("1"), json.Number("1.0"), true},
+		{json.Number("1e2"), 100, true},
+		{json.Number("9007199254740993"), uint64(9007199254740993), true},
+		{json.Number("9007199254740993"), uint64(9007199254740992), false},
 		{[]int{1, 2}, []float64{1.0, 2.0}, true},
 		{[]int(nil), []int{}, false},
 		{[]map[string]any(nil), []map[string]any{}, false},
@@ -44,6 +51,37 @@ func TestEqual(t *testing.T) {
 		check(tt.x2, tt.x2, true)
 		check(tt.x1, tt.x2, tt.want)
 		check(tt.x2, tt.x1, tt.want)
+	}
+}
+
+func TestEqualUseNumber(t *testing.T) {
+	for _, tt := range []struct {
+		x, y string
+		want bool
+	}{
+		{`{"limit": 1}`, `{"limit": "1"}`, false},
+		{`[1, {"limit": 2}]`, `[1, {"limit": "2"}]`, false},
+		{`{"limit": 1}`, `{"limit": 1.0}`, true},
+		{`[1, {"limit": 2}]`, `[1.0, {"limit": 2e0}]`, true},
+		{`{"limit": "1"}`, `{"limit": "1"}`, true},
+	} {
+		decode := func(s string) any {
+			t.Helper()
+			d := json.NewDecoder(strings.NewReader(s))
+			d.UseNumber()
+			var v any
+			if err := d.Decode(&v); err != nil {
+				t.Fatal(err)
+			}
+			return v
+		}
+		x, y := decode(tt.x), decode(tt.y)
+		if got := Equal(x, y); got != tt.want {
+			t.Errorf("Equal(%s, %s) = %t, want %t", tt.x, tt.y, got, tt.want)
+		}
+		if got := Equal(y, x); got != tt.want {
+			t.Errorf("Equal(%s, %s) = %t, want %t", tt.y, tt.x, got, tt.want)
+		}
 	}
 }
 

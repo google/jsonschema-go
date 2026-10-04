@@ -129,6 +129,11 @@ func equalValue(x, y reflect.Value) bool {
 		}
 		panic("cannot compare functions")
 	case reflect.String:
+		// json.Number has string kind, but is not a JSON string, even when its
+		// exponent is too large for jsonNumber to convert to a big.Rat.
+		if (x.Type() == reflect.TypeFor[json.Number]()) != (y.Type() == reflect.TypeFor[json.Number]()) {
+			return false
+		}
 		return x.String() == y.String()
 	case reflect.Bool:
 		return x.Bool() == y.Bool()
