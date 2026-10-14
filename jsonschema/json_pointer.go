@@ -153,6 +153,22 @@ func lookupSchemaField(v reflect.Value, name string) reflect.Value {
 		// for pointer dereference. So we use FieldByName to get the DependencySchemas map.
 		return v.FieldByName("DependencySchemas")
 	}
+	if name == "exclusiveMinimum" {
+		// The "exclusiveMinimum" keyword refers to the "union type" that is either a float64 or a boolean.
+		// Implemented using the ExclusiveMinimum representing the float64 and ExclusiveMinimumBoolean for the boolean.
+		if items := v.FieldByName("ExclusiveMinimum"); items.IsValid() && !items.IsNil() {
+			return items
+		}
+		return v.FieldByName("ExclusiveMinimumBoolean")
+	}
+	if name == "exclusiveMaximum" {
+		// The "exclusiveMaximum" keyword refers to the "union type" that is either a float64 or a boolean.
+		// Implemented using the ExclusiveMaximum representing the float64 and ExclusiveMaximumBoolean for the boolean.
+		if items := v.FieldByName("ExclusiveMaximum"); items.IsValid() && !items.IsNil() {
+			return items
+		}
+		return v.FieldByName("ExclusiveMaximumBoolean")
+	}
 	if sf, ok := schemaFieldMap[name]; ok {
 		return v.FieldByIndex(sf.Index)
 	}
