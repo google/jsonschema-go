@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"hash/maphash"
 	"iter"
-	"math"
 	"math/big"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -158,10 +158,12 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		n, ok := jsonNumber(instance)
 		if ok { // these keywords don't apply to non-numbers
 			if schema.MultipleOf != nil {
-				// TODO: validate MultipleOf as non-zero.
-				// The test suite assumes floats.
-				nf, _ := n.Float64() // don't care if it's exact or not
-				if _, f := math.Modf(nf / *schema.MultipleOf); f != 0 {
+				dividend := n
+				if instance.CanFloat() {
+					dividend = decimalRat(instance.Float(), instance.Type().Bits())
+				}
+				divisor := decimalRat(*schema.MultipleOf, 64)
+				if dividend == nil || divisor == nil || divisor.Sign() <= 0 || !new(big.Rat).Quo(dividend, divisor).IsInt() {
 					return fmt.Errorf("multipleOf: %s is not a multiple of %f", n, *schema.MultipleOf)
 				}
 			}
@@ -638,6 +640,13 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 		callerAnns.merge(&anns)
 	}
 	return nil
+}
+
+// decimalRat interprets a float as its shortest round-trippable JSON number,
+// rather than its exact binary fraction, for decimal divisibility checks.
+func decimalRat(f float64, bits int) *big.Rat {
+	r, _ := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, bits))
+	return r
 }
 
 // resolveDynamicRef returns the schema referred to by the argument schema's

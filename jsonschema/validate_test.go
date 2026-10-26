@@ -7,6 +7,7 @@ package jsonschema
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -117,6 +118,132 @@ func TestValidateErrors(t *testing.T) {
 	want := "prefixItems/0"
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("error:\n%s\ndoes not contain %q", err, want)
+	}
+}
+
+func TestValidateMultipleOf(t *testing.T) {
+	for _, tt := range []struct {
+		divisor float64
+		data    string
+		valid   bool
+	}{
+		{0.00001, "1", true},
+		{0.00001, "-1", true},
+		{0.00001, "0", true},
+		{0.1, "0.3", true},
+		{0.1, "-0.3", true},
+		{0.01, "0.29", true},
+		{0.01, "4.02", true},
+		{0.0001, "0.0075", true},
+		{1e-8, "12391239123", true},
+		{0.01, "1e308", true},
+		{1e-310, "1e-300", true},
+		{5e-324, "1e-323", true},
+		{3, "1e18", false},
+		{0.1, "0.30000000000000004", false},
+		{0.1, "0.29999999999999993", false},
+		{0.01, "0.009999999999999998", false},
+		{0.0001, "0.00751", false},
+		{0.1, `"0.3"`, true},
+		{0.1, "null", true},
+	} {
+		for _, useNumber := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%g/UseNumber=%t", tt.data, tt.divisor, useNumber), func(t *testing.T) {
+				dec := json.NewDecoder(strings.NewReader(tt.data))
+				if useNumber {
+					dec.UseNumber()
+				}
+				var instance any
+				if err := dec.Decode(&instance); err != nil {
+					t.Fatal(err)
+				}
+				rs, err := (&Schema{MultipleOf: &tt.divisor}).Resolve(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := rs.Validate(instance); (err == nil) != tt.valid {
+					t.Errorf("Validate(%v) = %v, want valid=%t", instance, err, tt.valid)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateMultipleOfGoNumbers(t *testing.T) {
+	for _, tt := range []struct {
+		instance any
+		divisor  float64
+		valid    bool
+	}{
+		{float32(0.3), 0.1, true},
+		{float32(0.29), 0.01, true},
+		{math.Nextafter(0.3, math.Inf(1)), 0.1, false},
+		{int64(9007199254740993), 2, false},
+		{uint64(math.MaxUint64), 2, false},
+		{json.Number("9007199254740993"), 2, false},
+		{json.Number("1.0000000000000001"), 1, false},
+		{json.Number("1e400"), 0.1, true},
+		{1, 0, false},
+		{1, -1, false},
+		{1, math.Inf(1), false},
+		{1, math.NaN(), false},
+	} {
+		t.Run(fmt.Sprintf("%v(%T)/%g", tt.instance, tt.instance, tt.divisor), func(t *testing.T) {
+			rs, err := (&Schema{MultipleOf: &tt.divisor}).Resolve(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := rs.Validate(tt.instance); (err == nil) != tt.valid {
+				t.Errorf("Validate(%v) = %v, want valid=%t", tt.instance, err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestValidateMultipleOfNested(t *testing.T) {
+	var schema Schema
+	if err := json.Unmarshal([]byte(`{
+		"type": "object",
+		"properties": {"vector": {
+			"type": "array", "minItems": 3, "maxItems": 3,
+			"items": {"type": "number", "minimum": -1, "maximum": 1, "multipleOf": 0.00001}
+		}}
+	}`), &schema); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := schema.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		vector []float64
+		valid  bool
+	}{
+		{[]float64{1, 0, 0}, true},
+		{[]float64{0.12345, -0.12345, 0}, true},
+		{[]float64{0.123456, 0, 0}, false},
+		{[]float64{2, 0, 0}, false},
+	} {
+		if err := rs.Validate(map[string][]float64{"vector": tt.vector}); (err == nil) != tt.valid {
+			t.Errorf("Validate(%v) = %v, want valid=%t", tt.vector, err, tt.valid)
+		}
+	}
+}
+
+func BenchmarkValidateMultipleOf(b *testing.B) {
+	for _, divisor := range []float64{1, 0.1} {
+		b.Run(fmt.Sprint(divisor), func(b *testing.B) {
+			rs, err := (&Schema{MultipleOf: &divisor}).Resolve(nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if err := rs.Validate(1); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
