@@ -377,6 +377,9 @@ func (op orderedProperties) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// UnmarshalJSON decodes a schema. Numbers in arbitrary JSON values, including
+// Const, Enum, Examples, and Extra, are represented as json.Number to preserve
+// their exact values. Fields with concrete numeric types retain those types.
 func (s *Schema) UnmarshalJSON(data []byte) error {
 	// A JSON boolean is a valid schema.
 	var b bool
@@ -479,7 +482,7 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 			*p = new(any)
 			return nil
 		}
-		return json.Unmarshal(raw, p)
+		return unmarshalUseNumber(raw, p)
 	}
 
 	// Setting Const to a pointer to null will marshal properly, but won't

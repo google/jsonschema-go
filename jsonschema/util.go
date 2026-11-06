@@ -9,8 +9,10 @@ import (
 	"cmp"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/maphash"
+	"io"
 	"math"
 	"math/big"
 	"reflect"
@@ -356,6 +358,23 @@ func marshalStructWithMap[T any](s *T, mapField string) ([]byte, error) {
 	return res, nil
 }
 
+// unmarshalUseNumber retains the numeric values of arbitrary JSON data.
+func unmarshalUseNumber(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("unexpected trailing JSON value")
+	}
+	return nil
+}
+
 // unmarshalStructWithMap is the inverse of marshalStructWithMap.
 // T has the same restrictions as in that function.
 //
@@ -364,12 +383,12 @@ func marshalStructWithMap[T any](s *T, mapField string) ([]byte, error) {
 // handles embedded structs as well.
 func unmarshalStructWithMap[T any](data []byte, v *T, mapField string) error {
 	// Unmarshal into the struct, ignoring unknown fields.
-	if err := json.Unmarshal(data, v); err != nil {
+	if err := unmarshalUseNumber(data, v); err != nil {
 		return err
 	}
 	// Unmarshal into the map.
 	m := map[string]any{}
-	if err := json.Unmarshal(data, &m); err != nil {
+	if err := unmarshalUseNumber(data, &m); err != nil {
 		return err
 	}
 	// Delete from the map the fields of the struct.
