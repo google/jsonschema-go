@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"io"
@@ -369,7 +370,7 @@ func unmarshalUseNumber(data []byte, v any) error {
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("unexpected trailing JSON value")
+		return errors.New("unexpected trailing JSON value")
 	}
 	return nil
 }
