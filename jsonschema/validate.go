@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -162,7 +163,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 				// The test suite assumes floats.
 				nf, _ := n.Float64() // don't care if it's exact or not
 				if _, f := math.Modf(nf / *schema.MultipleOf); f != 0 {
-					return fmt.Errorf("multipleOf: %s is not a multiple of %f", n, *schema.MultipleOf)
+					return fmt.Errorf("multipleOf: %s is not a multiple of %s", ratString(n), floatString(*schema.MultipleOf))
 				}
 			}
 
@@ -170,16 +171,16 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			cmp := func(f float64) int { return n.Cmp(m.SetFloat64(f)) }
 
 			if schema.Minimum != nil && cmp(*schema.Minimum) < 0 {
-				return fmt.Errorf("minimum: %s is less than %f", n, *schema.Minimum)
+				return fmt.Errorf("minimum: %s is less than %s", ratString(n), floatString(*schema.Minimum))
 			}
 			if schema.Maximum != nil && cmp(*schema.Maximum) > 0 {
-				return fmt.Errorf("maximum: %s is greater than %f", n, *schema.Maximum)
+				return fmt.Errorf("maximum: %s is greater than %s", ratString(n), floatString(*schema.Maximum))
 			}
 			if schema.ExclusiveMinimum != nil && cmp(*schema.ExclusiveMinimum) <= 0 {
-				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %f", n, *schema.ExclusiveMinimum)
+				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %s", ratString(n), floatString(*schema.ExclusiveMinimum))
 			}
 			if schema.ExclusiveMaximum != nil && cmp(*schema.ExclusiveMaximum) >= 0 {
-				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %f", n, *schema.ExclusiveMaximum)
+				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %s", ratString(n), floatString(*schema.ExclusiveMaximum))
 			}
 		}
 	}
@@ -913,4 +914,21 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 	}
 	structProperties.Store(t, props)
 	return props
+}
+
+// ratString formats a number from the instance the way it would appear in
+// JSON: 0, 2.5, 1e+21. big.Rat's own String gives "0/1" and "5/2", which
+// reads as a fraction rather than the value the caller sent.
+func ratString(r *big.Rat) string {
+	if r.IsInt() {
+		return r.Num().String()
+	}
+	f, _ := r.Float64()
+	return floatString(f)
+}
+
+// floatString formats a schema bound without trailing zeros: 1, not
+// 1.000000.
+func floatString(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
