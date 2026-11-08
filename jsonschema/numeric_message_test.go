@@ -1,6 +1,7 @@
 package jsonschema
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,10 @@ func TestNumericErrorMessages(t *testing.T) {
 		{&Schema{Type: "number", Minimum: f(0.5)}, 0.25, "minimum: 0.25 is less than 0.5"},
 		{&Schema{Type: "number", ExclusiveMaximum: f(2)}, 2.5, "exclusiveMaximum: 2.5 is greater than or equal to 2"},
 		{&Schema{Type: "number", MultipleOf: f(0.5)}, 0.3, "multipleOf: 0.3 is not a multiple of 0.5"},
+		{&Schema{Type: "number", Minimum: f(1)}, 1e-10, "minimum: 1e-10 is less than 1"},
+		// json.Number keeps digits float64 would drop.
+		{&Schema{Minimum: f(1)}, json.Number("0.30000000000000000001"), "minimum: 0.30000000000000000001 is less than 1"},
+		{&Schema{Maximum: f(1)}, json.Number("10000000000000000001"), "maximum: 10000000000000000001 is greater than 1"},
 	} {
 		rs, err := c.schema.Resolve(nil)
 		if err != nil {

@@ -163,7 +163,7 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 				// The test suite assumes floats.
 				nf, _ := n.Float64() // don't care if it's exact or not
 				if _, f := math.Modf(nf / *schema.MultipleOf); f != 0 {
-					return fmt.Errorf("multipleOf: %s is not a multiple of %s", ratString(n), floatString(*schema.MultipleOf))
+					return fmt.Errorf("multipleOf: %s is not a multiple of %s", numberString(instance), floatString(*schema.MultipleOf))
 				}
 			}
 
@@ -171,16 +171,16 @@ func (st *state) validate(instance reflect.Value, schema *Schema, callerAnns *an
 			cmp := func(f float64) int { return n.Cmp(m.SetFloat64(f)) }
 
 			if schema.Minimum != nil && cmp(*schema.Minimum) < 0 {
-				return fmt.Errorf("minimum: %s is less than %s", ratString(n), floatString(*schema.Minimum))
+				return fmt.Errorf("minimum: %s is less than %s", numberString(instance), floatString(*schema.Minimum))
 			}
 			if schema.Maximum != nil && cmp(*schema.Maximum) > 0 {
-				return fmt.Errorf("maximum: %s is greater than %s", ratString(n), floatString(*schema.Maximum))
+				return fmt.Errorf("maximum: %s is greater than %s", numberString(instance), floatString(*schema.Maximum))
 			}
 			if schema.ExclusiveMinimum != nil && cmp(*schema.ExclusiveMinimum) <= 0 {
-				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %s", ratString(n), floatString(*schema.ExclusiveMinimum))
+				return fmt.Errorf("exclusiveMinimum: %s is less than or equal to %s", numberString(instance), floatString(*schema.ExclusiveMinimum))
 			}
 			if schema.ExclusiveMaximum != nil && cmp(*schema.ExclusiveMaximum) >= 0 {
-				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %s", ratString(n), floatString(*schema.ExclusiveMaximum))
+				return fmt.Errorf("exclusiveMaximum: %s is greater than or equal to %s", numberString(instance), floatString(*schema.ExclusiveMaximum))
 			}
 		}
 	}
@@ -916,15 +916,25 @@ func structPropertiesOf(t reflect.Type) propertyMap {
 	return props
 }
 
-// ratString formats a number from the instance the way it would appear in
-// JSON: 0, 2.5, 1e+21. big.Rat's own String gives "0/1" and "5/2", which
-// reads as a fraction rather than the value the caller sent.
-func ratString(r *big.Rat) string {
-	if r.IsInt() {
-		return r.Num().String()
+// numberString formats a number from the instance as the caller wrote it,
+// rather than as the big.Rat it is compared as, whose String reads "0/1" or
+// "5/2". A json.Number is printed verbatim, so even
+// 10000000000000000001 or 0.30000000000000000001 keeps every digit; a float
+// prints in the shortest form that reads back as the same float64, which is
+// what strconv and encoding/json use.
+func numberString(v reflect.Value) string {
+	switch {
+	case v.CanInt():
+		return strconv.FormatInt(v.Int(), 10)
+	case v.CanUint():
+		return strconv.FormatUint(v.Uint(), 10)
+	case v.CanFloat():
+		return strconv.FormatFloat(v.Float(), 'g', -1, v.Type().Bits())
 	}
-	f, _ := r.Float64()
-	return floatString(f)
+	if jn, ok := v.Interface().(json.Number); ok {
+		return jn.String()
+	}
+	return fmt.Sprint(v.Interface())
 }
 
 // floatString formats a schema bound without trailing zeros: 1, not
