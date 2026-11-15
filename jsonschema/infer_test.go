@@ -726,6 +726,95 @@ func falseSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
+func TestForAllowAdditionalProperties(t *testing.T) {
+	type Child struct {
+		Name string `json:"name"`
+	}
+	type Custom struct{}
+	type Input struct {
+		Name    string           `json:"name"`
+		Child   Child            `json:"child,omitempty"`
+		Pointer *Child           `json:"pointer,omitempty"`
+		Slice   []Child          `json:"slice,omitempty"`
+		Array   [1]Child         `json:"array,omitempty"`
+		Map     map[string]Child `json:"map,omitempty"`
+		Counts  map[string]int   `json:"counts,omitempty"`
+		Custom  Custom           `json:"custom,omitempty"`
+	}
+	for _, gen := range []struct {
+		name string
+		fn   func(*jsonschema.ForOptions) (*jsonschema.Schema, error)
+	}{
+		{"For", jsonschema.For[Input]},
+		{"ForType", func(opts *jsonschema.ForOptions) (*jsonschema.Schema, error) {
+			return jsonschema.ForType(reflect.TypeFor[Input](), opts)
+		}},
+	} {
+		t.Run(gen.name, func(t *testing.T) {
+			for _, allow := range []bool{false, true} {
+				t.Run(strconv.FormatBool(allow), func(t *testing.T) {
+					s, err := gen.fn(&jsonschema.ForOptions{
+						AllowAdditionalProperties: allow,
+						TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+							reflect.TypeFor[Custom](): {Type: "object", AdditionalProperties: falseSchema()},
+						},
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Check the wire schema, not just the internal representation.
+					wire, err := json.Marshal(s)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var fields map[string]json.RawMessage
+					if err := json.Unmarshal(wire, &fields); err != nil {
+						t.Fatal(err)
+					}
+					if got := string(fields["additionalProperties"]); allow && got != "" || !allow && got != "false" {
+						t.Errorf("additionalProperties = %q with allow=%t", got, allow)
+					}
+					r, err := s.Resolve(nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, tc := range []struct {
+						name, input string
+						valid       bool
+					}{
+						{"known", `{"name":"x"}`, true},
+						{"extra", `{"name":"x","extra":1}`, allow},
+						{"child", `{"name":"x","child":{"name":"y","extra":1}}`, allow},
+						{"pointer", `{"name":"x","pointer":{"name":"y","extra":1}}`, allow},
+						{"null_pointer", `{"name":"x","pointer":null}`, true},
+						{"slice", `{"name":"x","slice":[{"name":"y","extra":1}]}`, allow},
+						{"array", `{"name":"x","array":[{"name":"y","extra":1}]}`, allow},
+						{"map", `{"name":"x","map":{"key":{"name":"y","extra":1}}}`, allow},
+						{"missing_required", `{"extra":1}`, false},
+						{"wrong_type", `{"name":1}`, false},
+						{"invalid_child", `{"name":"x","child":{"extra":1}}`, false},
+						{"invalid_map_value", `{"name":"x","map":{"key":1}}`, false},
+						{"typed_map", `{"name":"x","counts":{"key":2}}`, true},
+						{"invalid_typed_map", `{"name":"x","counts":{"key":"bad"}}`, false},
+						{"custom", `{"name":"x","custom":{}}`, true},
+						{"strict_custom", `{"name":"x","custom":{"extra":1}}`, false},
+					} {
+						t.Run(tc.name, func(t *testing.T) {
+							var input any
+							if err := json.Unmarshal([]byte(tc.input), &input); err != nil {
+								t.Fatal(err)
+							}
+							if err := r.Validate(input); (err == nil) != tc.valid {
+								t.Errorf("Validate: got %v, want valid=%t", err, tc.valid)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestDupSchema(t *testing.T) {
 	// Verify that we don't repeat schema contents, even if we clone the actual schemas.
 	type args struct {
