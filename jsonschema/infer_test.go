@@ -744,3 +744,78 @@ func TestDupSchema(t *testing.T) {
 		t.Errorf("A.items: got %q, want %q", g, w)
 	}
 }
+
+func TestForNamedEmbeddedStruct(t *testing.T) {
+	type Identity struct {
+		ID string `json:"id"`
+	}
+	type Value struct {
+		Identity `json:"identity"`
+		Note     string `json:"note"`
+	}
+	type Pointer struct {
+		*Identity `json:"identity,omitempty"`
+		Note      string `json:"note"`
+	}
+	type Named struct {
+		Identity Identity `json:"identity"`
+		Note     string   `json:"note"`
+	}
+	type NamedPointer struct {
+		Identity *Identity `json:"identity,omitempty"`
+		Note     string    `json:"note"`
+	}
+	type Ignored struct {
+		Identity `json:"-"`
+		Note     string `json:"note"`
+	}
+	type Flat struct {
+		Identity `json:",omitempty"`
+		Note     string `json:"note"`
+	}
+
+	for _, tt := range []struct {
+		name              string
+		value, equivalent any
+	}{
+		{"value", Value{Identity{ID: "record-7"}, "n"}, Named{}},
+		{"pointer", Pointer{&Identity{ID: "record-7"}, "n"}, NamedPointer{}},
+		{"nil pointer", Pointer{nil, "n"}, NamedPointer{}},
+		{"ignored", Ignored{Identity{ID: "record-7"}, "n"}, struct {
+			Note string `json:"note"`
+		}{}},
+		{"flattened", Flat{Identity{ID: "record-7"}, "n"}, struct {
+			ID   string `json:"id"`
+			Note string `json:"note"`
+		}{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := jsonschema.ForType(reflect.TypeOf(tt.value), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := jsonschema.ForType(reflect.TypeOf(tt.equivalent), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(jsonschema.Schema{})); diff != "" {
+				t.Fatalf("schema mismatch (-want +got):\n%s", diff)
+			}
+			data, err := json.Marshal(tt.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var instance any
+			if err := json.Unmarshal(data, &instance); err != nil {
+				t.Fatal(err)
+			}
+			resolved, err := got.Resolve(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := resolved.Validate(instance); err != nil {
+				t.Fatalf("Validate(%s): %v", data, err)
+			}
+		})
+	}
+}

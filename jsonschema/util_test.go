@@ -212,3 +212,33 @@ func TestJSONInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONNamesNamedEmbeddedStruct(t *testing.T) {
+	type Identity struct {
+		ID string `json:"id"`
+	}
+	for _, tt := range []struct {
+		name string
+		typ  reflect.Type
+		want map[string]bool
+	}{
+		{"named", reflect.TypeOf(struct {
+			Identity `json:"identity"`
+		}{}), map[string]bool{"identity": true}},
+		{"named pointer", reflect.TypeOf(struct {
+			*Identity `json:"identity,omitempty"`
+		}{}), map[string]bool{"identity": true}},
+		{"flattened", reflect.TypeOf(struct {
+			Identity `json:",omitempty"`
+		}{}), map[string]bool{"id": true}},
+		{"ignored", reflect.TypeOf(struct {
+			Identity `json:"-"`
+		}{}), map[string]bool{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, jsonNames(tt.typ)); diff != "" {
+				t.Errorf("jsonNames mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
