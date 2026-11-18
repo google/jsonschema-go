@@ -399,7 +399,7 @@ func jsonNames(t reflect.Type) map[string]bool {
 	for i := range t.NumField() {
 		field := t.Field(i)
 		// handle embedded structs
-		if field.Anonymous {
+		if isEmbeddedStruct(field) {
 			fieldType := field.Type
 			if fieldType.Kind() == reflect.Ptr {
 				fieldType = fieldType.Elem()
@@ -416,6 +416,22 @@ func jsonNames(t reflect.Type) map[string]bool {
 	}
 	jsonNamesMap.Store(t, m)
 	return m
+}
+
+// isEmbeddedStruct reports whether encoding/json promotes the field's children.
+func isEmbeddedStruct(field reflect.StructField) bool {
+	if !field.Anonymous {
+		return false
+	}
+	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if name != "" {
+		return false
+	}
+	t := field.Type
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.Kind() == reflect.Struct
 }
 
 type jsonInfo struct {

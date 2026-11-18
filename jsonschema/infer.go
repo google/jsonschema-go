@@ -248,13 +248,37 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		s.AdditionalProperties = falseSchema()
 
 		// If skipPath is non-nil, it is path to an anonymous field whose
-		// schema has been replaced by a known schema.
+		// schema has been replaced or whose children are not promoted.
 		var skipPath []int
 		for _, field := range reflect.VisibleFields(t) {
 			if s.Properties == nil {
 				s.Properties = make(map[string]*Schema)
 			}
-			if field.Anonymous {
+			// Check to see if this field has been promoted from an anonymous
+			// field whose children should be skipped.
+			if skipPath != nil {
+				skip := false
+				if len(field.Index) >= len(skipPath) {
+					skip = true
+					for i, index := range skipPath {
+						if field.Index[i] != index {
+							// If we're no longer in a subfield.
+							skip = false
+							break
+						}
+					}
+				}
+				if skip {
+					continue
+				} else {
+					// Anonymous fields are followed immediately by their promoted fields.
+					// Once we encounter a field that *isn't* promoted, we can stop
+					// checking.
+					skipPath = nil
+				}
+			}
+
+			if isEmbeddedStruct(field) {
 				override := schemas[field.Type]
 				if override != nil {
 					// Type must be object, and only properties can be set.
@@ -290,30 +314,10 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 				continue
 			}
 
-			// Check to see if this field has been promoted from a replaced anonymous
-			// type.
-			if skipPath != nil {
-				skip := false
-				if len(field.Index) >= len(skipPath) {
-					skip = true
-					for i, index := range skipPath {
-						if field.Index[i] != index {
-							// If we're no longer in a subfield.
-							skip = false
-							break
-						}
-					}
-				}
-				if skip {
-					continue
-				} else {
-					// Anonymous fields are followed immediately by their promoted fields.
-					// Once we encounter a field that *isn't* promoted, we can stop
-					// checking.
-					skipPath = nil
-				}
+			if field.Anonymous {
+				// Named or ignored embedded fields do not promote their children.
+				skipPath = field.Index
 			}
-
 			info := fieldJSONInfo(field)
 			if info.omit {
 				continue
