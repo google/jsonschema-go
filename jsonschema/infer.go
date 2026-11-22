@@ -31,6 +31,12 @@ type ForOptions struct {
 	// known can be described with "oneof".
 	IgnoreInvalidTypes bool
 
+	// AllowAdditionalProperties permits additional properties in schemas inferred
+	// from structs, including nested structs. If true, additionalProperties is
+	// omitted from those schemas. Map value constraints and schemas supplied in
+	// TypeSchemas are preserved.
+	AllowAdditionalProperties bool
+
 	// TypeSchemas maps types to their schemas.
 	// If [For] encounters a type that is a key in this map, the
 	// corresponding value is used as the resulting schema (after cloning to
@@ -56,7 +62,8 @@ type ForOptions struct {
 //     for items.
 //   - Maps with string key have schema type "object", and corresponding
 //     schema for additionalProperties.
-//   - Structs have schema type "object", and disallow additionalProperties.
+//   - Structs have schema type "object", and disallow additionalProperties unless
+//     [ForOptions.AllowAdditionalProperties] is true.
 //     Their properties are derived from exported struct fields, using the
 //     struct field JSON name. Fields that are marked "omitempty" or "omitzero" are
 //     considered optional; all other fields become required properties.
@@ -87,7 +94,7 @@ func For[T any](opts *ForOptions) (*Schema, error) {
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
 	maps.Copy(schemas, opts.TypeSchemas)
-	s, err := forType(reflect.TypeFor[T](), map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
+	s, err := forType(reflect.TypeFor[T](), map[reflect.Type]bool{}, opts, schemas)
 	if err != nil {
 		var z T
 		return nil, fmt.Errorf("For[%T](): %w", z, err)
@@ -103,7 +110,7 @@ func ForType(t reflect.Type, opts *ForOptions) (*Schema, error) {
 	schemas := maps.Clone(initialSchemaMap)
 	// Add types from the options. They override the default ones.
 	maps.Copy(schemas, opts.TypeSchemas)
-	s, err := forType(t, map[reflect.Type]bool{}, opts.IgnoreInvalidTypes, schemas)
+	s, err := forType(t, map[reflect.Type]bool{}, opts, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("ForType(%s): %w", t, err)
 	}
@@ -115,7 +122,8 @@ func f64Ptr(f float64) *float64 {
 	return &f
 }
 
-func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas map[reflect.Type]*Schema) (*Schema, error) {
+func forType(t reflect.Type, seen map[reflect.Type]bool, opts *ForOptions, schemas map[reflect.Type]*Schema) (*Schema, error) {
+	ignore := opts.IgnoreInvalidTypes
 	// Follow pointers: the schema for *T is almost the same as for T, except that
 	// an explicit JSON "null" is allowed for the pointer.
 	allowNull := false
@@ -207,7 +215,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			return nil, fmt.Errorf("unsupported map key type %v", t.Key().Kind())
 		}
 		s.Type = "object"
-		s.AdditionalProperties, err = forType(t.Elem(), seen, ignore, schemas)
+		s.AdditionalProperties, err = forType(t.Elem(), seen, opts, schemas)
 		if err != nil {
 			return nil, fmt.Errorf("computing map value schema: %v", err)
 		}
@@ -222,7 +230,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 		} else {
 			s.Type = "array"
 		}
-		itemsSchema, err := forType(t.Elem(), seen, ignore, schemas)
+		itemsSchema, err := forType(t.Elem(), seen, opts, schemas)
 		if err != nil {
 			return nil, fmt.Errorf("computing element schema: %v", err)
 		}
@@ -244,8 +252,9 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 
 	case reflect.Struct:
 		s.Type = "object"
-		// no additional properties are allowed
-		s.AdditionalProperties = falseSchema()
+		if !opts.AllowAdditionalProperties {
+			s.AdditionalProperties = falseSchema()
+		}
 
 		// If skipPath is non-nil, it is path to an anonymous field whose
 		// schema has been replaced by a known schema.
@@ -318,7 +327,7 @@ func forType(t reflect.Type, seen map[reflect.Type]bool, ignore bool, schemas ma
 			if info.omit {
 				continue
 			}
-			fs, err := forType(field.Type, seen, ignore, schemas)
+			fs, err := forType(field.Type, seen, opts, schemas)
 			if err != nil {
 				return nil, err
 			}
